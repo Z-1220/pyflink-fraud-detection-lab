@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电商交易风险监控大屏</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="card">
+                <div class="value" id="totalAmount">0</div>
+                <div class="label">实时总交易金额</div>
+            </div>
+            <div class="card">
+                <div class="value" id="totalCount">0</div>
+                <div class="label">实时总交易笔数</div>
+            </div>
+            <div class="card">
+                <div class="value" id="alarmCount">0</div>
+                <div class="label">告警总数</div>
+            </div>
+            <div class="card">
+                <div class="value" id="windowAmount">0</div>
+                <div class="label">当前窗口金额</div>
+            </div>
+        </div>
+
+        <div class="charts">
+            <div class="chart-panel">
+                <div id="categoryChart" class="chart"></div>
+            </div>
+            <div class="chart-panel">
+                <div id="trendChart" class="chart"></div>
+            </div>
+            <div class="alarm-table">
+                <h3>实时告警列表</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>类型</th>
+                            <th>用户ID</th>
+                            <th>交易ID</th>
+                            <th>金额/次数</th>
+                            <th>详情</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alarmBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
