@@ -196,6 +196,66 @@ def get_alert_history(alert_type: str = None, limit: int = 100):
         return {"error": str(e)}
 
 
+@app.get("/api/top-risky-users")
+def get_top_risky_users(limit: int = 5):
+    """返回告警次数最多的用户排名（跨库 JOIN，fallback 分步查询）"""
+    ads_config = MYSQL_CONFIG.copy()
+    ads_config["database"] = "ads_ecommerce"
+    try:
+        conn = pymysql.connect(**ads_config)
+        with conn.cursor() as cur:
+            try:
+                # 尝试跨库 JOIN
+                cur.execute(
+                    """SELECT ra.user_id, u.user_name, COUNT(*) as alert_count
+                       FROM risk_alerts ra
+                       JOIN ecommerce.users u ON ra.user_id = u.user_id
+                       GROUP BY ra.user_id, u.user_name
+                       ORDER BY alert_count DESC
+                       LIMIT %s""",
+                    (limit,),
+                )
+                rows = cur.fetchall()
+            except pymysql.Error:
+                # fallback: 分步查询再合并
+                cur.execute(
+                    """SELECT user_id, COUNT(*) as alert_count
+                       FROM risk_alerts
+                       GROUP BY user_id
+                       ORDER BY alert_count DESC
+                       LIMIT %s""",
+                    (limit,),
+                )
+                alert_rows = cur.fetchall()
+                if not alert_rows:
+                    rows = []
+                else:
+                    user_ids = [r[0] for r in alert_rows]
+                    alert_map = {r[0]: r[1] for r in alert_rows}
+                    conn_ecom = pymysql.connect(**MYSQL_CONFIG)
+                    try:
+                        with conn_ecom.cursor() as cur2:
+                            placeholders = ",".join(["%s"] * len(user_ids))
+                            cur2.execute(
+                                f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
+                                user_ids,
+                            )
+                            name_map = {r[0]: r[1] for r in cur2.fetchall()}
+                        rows = [
+                            (uid, name_map.get(uid, "unknown"), cnt)
+                            for uid, cnt in alert_rows
+                        ]
+                    finally:
+                        conn_ecom.close()
+        conn.close()
+        return [
+            {"user_id": r[0], "user_name": r[1], "alert_count": r[2]}
+            for r in rows
+        ]
+    except Exception as e:  # noqa: PIE786
+        return {"error": str(e)}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """返回监控大屏首页"""

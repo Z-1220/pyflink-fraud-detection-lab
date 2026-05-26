@@ -10,7 +10,6 @@ import traceback
 from datetime import datetime, timezone
 
 import pymysql
-import uvicorn
 from fastapi import FastAPI
 from pyflink.common import Duration, Time, WatermarkStrategy, Types, RestartStrategies
 from pyflink.common.serialization import SimpleStringSchema
@@ -50,11 +49,11 @@ OUTPUT_GLOBAL_ACC_TOPIC = "total_amount_and_count_events"
 OUTPUT_WINDOW_GLOBAL_TOPIC = "window_count_and_amount_events"
 OUTPUT_CATEGORY_TOPIC = "category_aggregated_events"
 
-HIGH_AMOUNT_THRESHOLD = 5000.0
-FREQ_WINDOW_MS = 300_000
-FREQ_THRESHOLD = 5
-INCREASE_MIN_SEQ = 3
-INCREASE_FACTOR = 1.1
+HIGH_AMOUNT_THRESHOLD = 5000.0          # 大额交易阈值：单笔交易金额 > 5000 即触发告警
+FREQ_WINDOW_MS = 300_000                # 高频交易检测窗口：5 分钟（300,000 毫秒）
+FREQ_THRESHOLD = 5                      # 高频交易告警触发条件：同一用户在窗口内交易次数 ≥ 5 笔
+INCREASE_MIN_SEQ = 3                    # 连续递增交易序列最小长度：至少连续 3 笔递增才触发告警
+INCREASE_FACTOR = 1.1                   # 递增比例：下一笔金额必须大于前一笔的 1.1 倍（即增长 10% 以上）
 
 ADS_MYSQL_CONFIG = {
     "host": "localhost",
@@ -121,10 +120,7 @@ class HighFrequencyDetector(KeyedProcessFunction):
             user_id = value[0]
             ts = value[3]
 
-            try:
-                ts_list = self.timestamps_state.value()
-            except AttributeError:
-                ts_list = []
+            ts_list = self.timestamps_state.get()
             if ts_list is None:
                 ts_list = []
 
@@ -154,10 +150,7 @@ class HighFrequencyDetector(KeyedProcessFunction):
 
     def on_timer(self, timestamp: int, ctx):
         try:
-            try:
-                ts_list = self.timestamps_state.value()
-            except AttributeError:
-                ts_list = []
+            ts_list = self.timestamps_state.get()
             if ts_list is None:
                 ts_list = []
             cutoff = timestamp - FREQ_WINDOW_MS
@@ -203,7 +196,7 @@ class ContinuousIncreaseDetector(KeyedProcessFunction):
         self.ads_conn = None
 
     def open(self, runtime_context: RuntimeContext):
-        self.last_amounts = runtime_context.get_state(
+        self.last_amounts = runtime_context.get_list_state(
             ListStateDescriptor("last_amounts", Types.DOUBLE())
         )
         self.ads_conn = pymysql.connect(**ADS_MYSQL_CONFIG)
@@ -215,23 +208,17 @@ class ContinuousIncreaseDetector(KeyedProcessFunction):
             ts = value[3]
             txn_id = value[4]
 
-            try:
-                amounts = self.last_amounts.value()
-            except AttributeError:
-                amounts = []
-            if amounts is None:
-                amounts = []
-
-            amounts.append(amount)
+            self.last_amounts.add(amount)
+            amounts = list(self.last_amounts.get() or [])
             if len(amounts) > 10:
                 amounts = amounts[-10:]
-            self.last_amounts.update(amounts)
+                self.last_amounts.update(amounts)
 
             if len(amounts) >= INCREASE_MIN_SEQ:
                 inc_count = 1
                 inc_amounts = [amounts[-1]]
                 for i in range(len(amounts)-2, -1, -1):
-                    if amounts[i+1] > amounts[i] * INCREASE_FACTOR:
+                    if amounts[i+1] >= amounts[i] * INCREASE_FACTOR:
                         inc_count += 1
                         inc_amounts.insert(0, amounts[i])
                     else:
@@ -512,4 +499,4 @@ def main():
     env.execute("Ecommerce Risk Detection")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    main()
