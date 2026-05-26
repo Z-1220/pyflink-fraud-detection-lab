@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "Bash(python -c \"import urllib.request; data=urllib.request.urlopen\\('https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js'\\).read\\(\\); open\\('d:/PythonProject/02_Research/pyflink-fraud-detection-lab/src/code/static/echarts.min.js','wb'\\).write\\(data\\); print\\(f'OK {len\\(data\\)} bytes'\\)\")",
+      "Bash(\"d:/PythonProject/02_Research/pyflink-fraud-detection-lab/.venv/Scripts/python.exe\" -c \"import urllib.request; data=urllib.request.urlopen\\('https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js'\\).read\\(\\); open\\('d:/PythonProject/02_Research/pyflink-fraud-detection-lab/src/code/static/echarts.min.js','wb'\\).write\\(data\\); print\\(f'OK {len\\(data\\)} bytes'\\)\")"
+    ]
+  }
+}

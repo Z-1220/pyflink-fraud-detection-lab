@@ -60,6 +60,7 @@ class TransactionGenerator:
         self.kafka_producer = kafka_producer
         self.user_ids = []
         self.product_info = []          # (product_id, category)
+        self.product_name_map = {}      # product_id → product_name
         self.all_users = []             # 完整用户信息，用于发送 user_info
         self.user_ip_map = {}           # user_id → ip_address
         self.seq_states = {}
@@ -77,11 +78,12 @@ class TransactionGenerator:
                 raise RuntimeError("users 表为空，请先运行 create_tables.py")
             self.user_ids = [row[0] for row in users]
 
-            cur.execute("SELECT product_id, category FROM products")
+            cur.execute("SELECT product_id, category, product_name FROM products")
             prods = cur.fetchall()
             if not prods:
                 raise RuntimeError("products 表为空")
-            self.product_info = prods
+            self.product_info = [(r[0], r[1]) for r in prods]
+            self.product_name_map = {r[0]: r[2] for r in prods}
 
             cur.execute("SELECT user_id, user_name, ip_address, account_type, device FROM users")
             self.all_users = cur.fetchall()
@@ -113,11 +115,13 @@ class TransactionGenerator:
             cur.execute("SELECT user_id, user_name, ip_address, account_type, device FROM users")
             self.all_users = cur.fetchall()
             self.user_ip_map = {row[0]: row[2] for row in self.all_users}
+            cur.execute("SELECT product_id, product_name FROM products")
+            self.product_name_map = {row[0]: row[1] for row in cur.fetchall()}
         self._send_all_user_info()
         print(f"🔄 元数据已刷新，当前用户数: {len(self.user_ids)}")
 
     @staticmethod
-    def _txn_to_kafka_msg(txn_tuple, ip_address="0.0.0.0"):
+    def _txn_to_kafka_msg(txn_tuple, ip_address="0.0.0.0", product_name="unknown"):
         """将交易元组转为 Kafka JSON 消息"""
         return {
             "transaction_id": txn_tuple[0],
@@ -128,6 +132,7 @@ class TransactionGenerator:
             "transaction_type": txn_tuple[5],
             "result": txn_tuple[6],
             "ip_address": ip_address,
+            "product_name": product_name,
             "timestamp": int(datetime.strptime(txn_tuple[7], '%Y-%m-%d %H:%M:%S.%f').timestamp() * 1000)
         }
 
@@ -238,7 +243,8 @@ class TransactionGenerator:
             # ---------- 发送到 Kafka ----------
             for txn in transactions:
                 ip = self.user_ip_map.get(txn[1], "0.0.0.0")
-                kafka_msg = self._txn_to_kafka_msg(txn, ip_address=ip)
+                pname = self.product_name_map.get(txn[2], "unknown")
+                kafka_msg = self._txn_to_kafka_msg(txn, ip_address=ip, product_name=pname)
                 try:
                     self.kafka_producer.send(TOPIC_TRANSACTION, value=kafka_msg)
                 except Exception as e:

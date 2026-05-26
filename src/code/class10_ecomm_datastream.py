@@ -49,6 +49,7 @@ OUTPUT_ALARM_TOPIC = "alarm_events"
 OUTPUT_GLOBAL_ACC_TOPIC = "total_amount_and_count_events"
 OUTPUT_WINDOW_GLOBAL_TOPIC = "window_count_and_amount_events"
 OUTPUT_CATEGORY_TOPIC = "category_aggregated_events"
+OUTPUT_PRODUCT_TOPIC = "product_aggregated_events"
 
 HIGH_AMOUNT_THRESHOLD = 5000.0          # 大额交易阈值：单笔交易金额 > 5000 即触发告警
 FREQ_WINDOW_MS = 300_000                # 高频交易检测窗口：5 分钟（300,000 毫秒）
@@ -114,6 +115,12 @@ def _alert_stats():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/favicon.ico")
+async def _favicon():
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def _root():
     with open(os.path.join(static_dir, "index.html"), "r", encoding="utf-8") as f:
@@ -139,6 +146,8 @@ class ParseTransaction(MapFunction):
             txn.get("result", "success"),            # [5]
             txn.get("transaction_type", "purchase"), # [6]
             txn.get("ip_address", "0.0.0.0"),        # [7]
+            txn.get("product_id", "unknown"),        # [8]
+            txn.get("product_name", "unknown"),      # [9]
         )
 
 
@@ -460,6 +469,31 @@ class IPSharingDetector(ProcessWindowFunction):
             self.ads_conn.close()
 
 
+class ProductWindowFunction(ProcessWindowFunction):
+    """5 秒滚动窗口按商品聚合交易额和笔数"""
+    def open(self, runtime_context):
+        pass
+
+    def process(self, product_name: str, context, elements) -> list:
+        total = 0.0
+        count = 0
+        category = ""
+        for e in elements:
+            total += e[1]
+            count += 1
+            if not category:
+                category = e[2]
+        result = {
+            "window_start": context.window().start,
+            "window_end": context.window().end,
+            "product_name": product_name,
+            "category": category,
+            "total_amount": round(total, 2),
+            "transaction_count": count,
+        }
+        return [json.dumps(result)]
+
+
 class GlobalWindowFunction(ProcessWindowFunction):
     def __init__(self):
         self.ads_conn = None
@@ -635,6 +669,12 @@ def main():
         .process(CategoryWindowFunction(), output_type=Types.STRING())
     )
 
+    product_window_stream = (
+        parsed_stream.key_by(lambda x: x[9])
+        .window(TumblingEventTimeWindows.of(Time.seconds(5)))
+        .process(ProductWindowFunction(), output_type=Types.STRING())
+    )
+
     def create_kafka_sink(topic):
         return (
             KafkaSink.builder()
@@ -652,6 +692,7 @@ def main():
     global_acc_stream.sink_to(create_kafka_sink(OUTPUT_GLOBAL_ACC_TOPIC))
     global_window_stream.sink_to(create_kafka_sink(OUTPUT_WINDOW_GLOBAL_TOPIC))
     category_window_stream.sink_to(create_kafka_sink(OUTPUT_CATEGORY_TOPIC))
+    product_window_stream.sink_to(create_kafka_sink(OUTPUT_PRODUCT_TOPIC))
 
     env.execute("Ecommerce Risk Detection")
 

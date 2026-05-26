@@ -169,11 +169,13 @@ function escHtml(s) {
 function renderCategoryChart() {
     const data = Array.from(categoryMap.entries()).map(([k, v]) => ({ name: k, value: v.amount }));
     categoryChart.setOption({
-        title: { text: '商品类别交易分布', left: 'center', top: 0, textStyle: { color: '#fff', fontSize: 13 } },
+        color: ['#D45252','#D4A037','#3CAB6E','#3A8AE8','#E88A3A',
+                '#7C6BC4','#D4808A','#48B8B0','#CC8A5C','#7A9CC0'],
+        title: { text: '商品类别交易分布', left: 'center', top: 0, textStyle: { color: '#D6E4F0', fontSize: 13 } },
         tooltip: { trigger: 'item' },
         series: [{
             type: 'pie', radius: ['35%', '65%'], center: ['50%', '55%'],
-            data, label: { color: '#aac', fontSize: 10, formatter: '{b}' },
+            data, label: { color: '#8AA4C0', fontSize: 10, formatter: '{b}' },
             emphasis: { label: { fontSize: 14 } }
         }]
     });
@@ -181,25 +183,25 @@ function renderCategoryChart() {
 
 function renderTrendChart() {
     trendChart.setOption({
-        title: { text: '近5分钟窗口趋势', left: 'center', textStyle: { color: '#fff', fontSize: 13 } },
+        title: { text: '近5分钟窗口趋势', left: 'center', textStyle: { color: '#D6E4F0', fontSize: 13 } },
         tooltip: { trigger: 'axis' },
-        legend: { data: ['金额', '笔数'], textStyle: { color: '#aac' }, top: 22 },
+        legend: { data: ['金额', '笔数'], textStyle: { color: '#8AA4C0' }, top: 22 },
         grid: { top: 60, right: 50, left: 60, bottom: 30 },
-        xAxis: { type: 'category', data: trendData.map(d => d.time), axisLabel: { color: '#fff', fontSize: 10 } },
+        xAxis: { type: 'category', data: trendData.map(d => d.time), axisLabel: { color: '#8AA4C0', fontSize: 10 } },
         yAxis: [
-            { type: 'value', name: '金额(¥)', nameTextStyle: { color: '#aac' },
-              axisLabel: { color: '#aac', formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v },
-              splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
-            { type: 'value', name: '笔数', nameTextStyle: { color: '#aac' },
-              axisLabel: { color: '#aac' },
+            { type: 'value', name: '金额(¥)', nameTextStyle: { color: '#8AA4C0' },
+              axisLabel: { color: '#8AA4C0', formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v },
+              splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+            { type: 'value', name: '笔数', nameTextStyle: { color: '#8AA4C0' },
+              axisLabel: { color: '#8AA4C0' },
               splitLine: { show: false },
               min: 0, max: (v) => Math.max(v.max * 4, 50) }
         ],
         series: [
             { name: '金额', type: 'line', data: trendData.map(d => d.amount), smooth: true,
-              yAxisIndex: 0, itemStyle: { color: '#00d4ff' } },
+              yAxisIndex: 0, itemStyle: { color: '#2B7BE4' } },
             { name: '笔数', type: 'line', data: trendData.map(d => d.count), smooth: true,
-              yAxisIndex: 1, itemStyle: { color: '#ffa500' } }
+              yAxisIndex: 1, itemStyle: { color: '#D4A037' } }
         ]
     });
 }

@@ -24,6 +24,7 @@ TOPICS = [
     "total_amount_and_count_events",
     "window_count_and_amount_events",
     "category_aggregated_events",
+    "product_aggregated_events",
 ]
 GROUP_ID = "websocket-server"
 
@@ -283,6 +284,12 @@ def get_alert_stats():
         return {"by_type": by_type, "by_hour": by_hour}
     except Exception as e:  # noqa: PIE786
         return {"error": str(e)}
+
+
+@app.get("/favicon.ico")
+async def _favicon():
+    from fastapi.responses import Response
+    return Response(status_code=204)
 
 
 @app.get("/", response_class=HTMLResponse)

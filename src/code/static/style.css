@@ -1,56 +1,62 @@
+/* ====== 水墨丹青 — 中国风暗色大屏配色 ====== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #0b1a2e; color: #fff; font-family: 'Microsoft YaHei', sans-serif; }
+body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans-serif; }
 
 .container {
     display: flex; flex-direction: column;
     height: 100vh; padding: 14px 20px; gap: 10px;
 }
 
-.header { display: flex; justify-content: space-around; flex-shrink: 0; }
-
-.card {
-    background: rgba(16, 46, 76, 0.8); border-radius: 10px;
-    padding: 14px; text-align: center; width: 22%;
+/* ---- 大屏标题 ---- */
+.dashboard-title {
+    flex-shrink: 0; text-align: center;
+    font-size: 26px; font-weight: bold; letter-spacing: 6px;
+    color: #D4A037;
+    text-shadow: 0 0 12px rgba(212, 160, 55, 0.3);
+    padding-bottom: 2px;
 }
-.card .value { font-size: 30px; font-weight: bold; color: #00d4ff; }
-.card .label { font-size: 13px; color: #a0c0e0; margin-top: 4px; }
 
+/* ---- 卡片 / 面板共用 ---- */
+.header { display: flex; justify-content: space-around; flex-shrink: 0; }
+.card, .chart-panel, .top-users-row, .alarm-section {
+    background: rgba(26, 58, 92, 0.82); border-radius: 10px;
+}
+
+.card { padding: 14px; text-align: center; width: 22%; }
+.card .value { font-size: 30px; font-weight: bold; color: #D4A037; }
+.card .label { font-size: 13px; color: #8AA4C0; margin-top: 4px; }
+
+/* ---- 图表区 ---- */
 .charts {
     display: grid; grid-template-columns: 2fr 1fr;
     gap: 14px; flex-shrink: 0;
 }
-.chart-panel {
-    background: rgba(16, 46, 76, 0.8); border-radius: 10px; padding: 12px;
-}
+.chart-panel { padding: 12px; }
 .chart { width: 100%; height: 220px; }
 
 /* ---- 风险用户排行 ---- */
-.top-users-row {
-    background: rgba(16, 46, 76, 0.8); border-radius: 10px;
-    padding: 10px 16px; flex-shrink: 0;
-}
-.section-title { font-size: 14px; color: #a0c0e0; margin-bottom: 6px; }
+.top-users-row { padding: 10px 16px; flex-shrink: 0; }
+.section-title { font-size: 14px; color: #8AA4C0; margin-bottom: 6px; }
 .top-users-list { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.placeholder { color: #556; font-size: 13px; }
+.placeholder { color: #5A7A96; font-size: 13px; }
 
 .user-rank-item {
     display: flex; align-items: center; gap: 6px;
-    background: rgba(0, 212, 255, 0.08); border-radius: 8px;
+    background: rgba(212, 160, 55, 0.06); border-radius: 8px;
     padding: 6px 12px; min-width: 140px;
 }
 .user-rank-item .rank {
     font-size: 16px; font-weight: bold; width: 24px; text-align: center;
 }
-.user-rank-item .rank.r1 { color: #ffd700; }
-.user-rank-item .rank.r2 { color: #c0c0c0; }
-.user-rank-item .rank.r3 { color: #cd7f32; }
-.user-rank-item .rank.rn { color: #668; }
-.user-rank-item .uname { font-size: 13px; flex: 1; }
-.user-rank-item .ucount { font-size: 11px; color: #ff4d4d; }
+.user-rank-item .rank.r1 { color: #D4A037; text-shadow: 0 0 8px rgba(212, 160, 55, 0.4); }
+.user-rank-item .rank.r2 { color: #A0B8D0; }
+.user-rank-item .rank.r3 { color: #B8743A; }
+.user-rank-item .rank.rn { color: #5A7A96; }
+.user-rank-item .uname { font-size: 13px; flex: 1; color: #D6E4F0; }
+.user-rank-item .ucount { font-size: 11px; color: #D45252; }
 
 /* ---- 告警区域 ---- */
 .alarm-section {
-    background: rgba(16, 46, 76, 0.8); border-radius: 10px;
     padding: 10px 14px; flex: 1; display: flex; flex-direction: column;
     min-height: 250px;
 }
@@ -59,46 +65,54 @@ body { background: #0b1a2e; color: #fff; font-family: 'Microsoft YaHei', sans-se
     margin-bottom: 8px; flex-shrink: 0;
 }
 .alarm-toolbar .section-title { margin-bottom: 0; white-space: nowrap; }
-.filter-group {
-    display: flex; align-items: center; gap: 8px; flex: 1;
-}
-.filter-group input {
-    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-    color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 13px;
-    width: 200px; outline: none;
-}
-.filter-group input:focus { border-color: #00d4ff; }
-.filter-group input::placeholder { color: #556; }
-.filter-group select {
-    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-    color: #ccc; padding: 5px 8px; border-radius: 6px; font-size: 13px; outline: none;
-}
-.filter-group select:focus { border-color: #00d4ff; }
-.filter-group select option { background: #1a3a5c; color: #fff; }
-.filter-btn {
-    background: rgba(0, 212, 255, 0.2); border: 1px solid #00d4ff;
-    color: #00d4ff; padding: 5px 14px; border-radius: 6px; font-size: 13px;
-    cursor: pointer;
-}
-.filter-btn:hover { background: rgba(0, 212, 255, 0.35); }
-.filter-count { color: #556; font-size: 12px; white-space: nowrap; }
 
+/* ---- 筛选控件 ---- */
+.filter-group { display: flex; align-items: center; gap: 8px; flex: 1; }
+.filter-group input,
+.filter-group select {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    color: #D6E4F0; padding: 5px 10px; border-radius: 6px;
+    font-size: 13px; outline: none;
+}
+.filter-group input { width: 200px; }
+.filter-group input::placeholder { color: #4A6A86; }
+.filter-group input:focus,
+.filter-group select:focus {
+    border-color: #2B7BE4; background: rgba(43, 123, 228, 0.10);
+}
+.filter-group select option { background: #163A5C; color: #D6E4F0; }
+
+.filter-btn {
+    background: rgba(43, 123, 228, 0.15); border: 1px solid #2B7BE4;
+    color: #3A8AE8; padding: 5px 14px; border-radius: 6px;
+    font-size: 13px; cursor: pointer;
+}
+.filter-btn:hover { background: rgba(43, 123, 228, 0.30); color: #5BA0F0; }
+.filter-count { color: #5A7A96; font-size: 12px; white-space: nowrap; }
+
+/* ---- 告警表格 ---- */
 .alarm-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .alarm-scroll table { width: 100%; border-collapse: collapse; }
 .alarm-scroll thead { position: sticky; top: 0; z-index: 1; }
 .alarm-scroll th, .alarm-scroll td {
-    padding: 5px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 5px 8px; text-align: left;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
     font-size: 12px;
 }
-.alarm-scroll th { background: #0d3660; }
-.alarm-scroll tbody tr:hover { background: rgba(255,255,255,0.04); }
+.alarm-scroll th { background: rgba(18, 48, 78, 0.95); color: #8AA4C0; }
+.alarm-scroll tbody tr:hover { background: rgba(212, 160, 55, 0.04); }
 
-.high-freq { color: #ffa500; }
-.large-amount { color: #ff4d4d; }
-.increase { color: #ffd700; }
-.failed-surge { color: #ff8c42; }
-.ip-sharing { color: #5cc7ff; }
+/* ---- 5 种告警类型颜色（暖→冷严重度弧线）---- */
+.large-amount    { color: #D45252; }  /* 朱砂红 — 最高紧急 */
+.high-freq       { color: #E88A3A; }  /* 琥珀橙 — 持续活动 */
+.increase        { color: #D4A037; }  /* 琉璃黄 — 观察趋势 */
+.failed-surge    { color: #C04878; }  /* 绛紫   — 系统健康 */
+.ip-sharing      { color: #3A8AE8; }  /* 青花蓝 — 信息提示 */
 
+/* ---- 滚动条 ---- */
 .alarm-scroll::-webkit-scrollbar { width: 5px; }
 .alarm-scroll::-webkit-scrollbar-track { background: transparent; }
-.alarm-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+.alarm-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.12); border-radius: 3px;
+}
+.alarm-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
