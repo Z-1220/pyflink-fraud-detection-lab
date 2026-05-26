@@ -31,17 +31,26 @@ TOPIC_TRANSACTION = "transaction_events"
 TOPIC_USER_INFO = "user_info"
 
 BATCH_SIZE = 15
-SLEEP_INTERVAL = 0.8
+SLEEP_INTERVAL = 1.5
 HIGH_AMOUNT_THRESHOLD = 5000
-HIGH_FREQ_USER_COUNT = 2
+# 异常注入概率（每批次）
+HIGH_FREQ_CHANCE = 0.25         # 25% 概率注入高频交易
 HIGH_FREQ_MIN_TXNS = 3
-HIGH_FREQ_MAX_TXNS = 6
+HIGH_FREQ_MAX_TXNS = 5
+INCREASE_SEQ_CHANCE = 0.15      # 15% 概率注入连续递增
+INCREASE_SEQ_LENGTH_MIN = 3
+INCREASE_SEQ_LENGTH_MAX = 4
+LARGE_TXN_CHANCE = 0.25         # 25% 概率注入大额交易
+LARGE_TXN_COUNT_MIN = 1
+LARGE_TXN_COUNT_MAX = 2
 
 CATEGORIES = [
     "electronics", "clothing", "food", "home", "books",
     "sports", "toys", "health", "automotive", "music"
 ]
 TRANS_TYPES = ["purchase", "refund", "transfer"]
+# 结果加权：80% 成功，12% 失败，8% 处理中
+RESULT_WEIGHTS = [0.80, 0.12, 0.08]
 RESULTS = ["success", "failed", "processing"]
 
 
@@ -52,6 +61,7 @@ class TransactionGenerator:
         self.user_ids = []
         self.product_info = []          # (product_id, category)
         self.all_users = []             # 完整用户信息，用于发送 user_info
+        self.user_ip_map = {}           # user_id → ip_address
         self.seq_states = {}
         self.seq_committed = set()
         self.reconnect_attempts = 3
@@ -75,6 +85,7 @@ class TransactionGenerator:
 
             cur.execute("SELECT user_id, user_name, ip_address, account_type, device FROM users")
             self.all_users = cur.fetchall()
+            self.user_ip_map = {row[0]: row[2] for row in self.all_users}
         print(f"✅ 元数据加载完成：{len(self.user_ids)} 个用户，{len(self.product_info)} 个商品")
 
     def _send_all_user_info(self):
@@ -101,11 +112,12 @@ class TransactionGenerator:
             self.user_ids = [row[0] for row in cur.fetchall()]
             cur.execute("SELECT user_id, user_name, ip_address, account_type, device FROM users")
             self.all_users = cur.fetchall()
+            self.user_ip_map = {row[0]: row[2] for row in self.all_users}
         self._send_all_user_info()
         print(f"🔄 元数据已刷新，当前用户数: {len(self.user_ids)}")
 
     @staticmethod
-    def _txn_to_kafka_msg(txn_tuple):
+    def _txn_to_kafka_msg(txn_tuple, ip_address="0.0.0.0"):
         """将交易元组转为 Kafka JSON 消息"""
         return {
             "transaction_id": txn_tuple[0],
@@ -115,6 +127,7 @@ class TransactionGenerator:
             "amount": float(txn_tuple[4]),
             "transaction_type": txn_tuple[5],
             "result": txn_tuple[6],
+            "ip_address": ip_address,
             "timestamp": int(datetime.strptime(txn_tuple[7], '%Y-%m-%d %H:%M:%S.%f').timestamp() * 1000)
         }
 
@@ -130,7 +143,7 @@ class TransactionGenerator:
         prod_id, category = random.choice(self.product_info)
         amount = round(random.uniform(10, 3000), 2)
         txn_type = random.choice(TRANS_TYPES)
-        result = random.choice(RESULTS)
+        result = random.choices(RESULTS, weights=RESULT_WEIGHTS)[0]
         event_time = datetime.now() + timedelta(seconds=random.randint(-5, 5))
         return self._build_txn(user_id, prod_id, category, amount, txn_type, result, event_time)
 
@@ -155,15 +168,15 @@ class TransactionGenerator:
         return self._build_txn(user_id, prod_id, category, new_amt, "purchase", "success", event_time)
 
     def generate_batch(self):
-        """生成一批交易，写入 MySQL 和 Kafka"""
+        """生成一批交易（概率注入异常），写入 MySQL 和 Kafka"""
         cursor = self.conn.cursor()
         transactions = []
         anomaly_log = []
 
         try:
-            # 1. 高频交易
-            high_freq_users = random.sample(self.user_ids, min(HIGH_FREQ_USER_COUNT, len(self.user_ids)))
-            for user in high_freq_users:
+            # 1. 高频交易（概率注入）
+            if random.random() < HIGH_FREQ_CHANCE:
+                user = random.choice(self.user_ids)
                 tx_count = random.randint(HIGH_FREQ_MIN_TXNS, HIGH_FREQ_MAX_TXNS)
                 for _ in range(tx_count):
                     txn = self._generate_normal_transaction()
@@ -174,24 +187,27 @@ class TransactionGenerator:
                     transactions.append(tuple(txn))
                 anomaly_log.append(f"高频：用户 {user} 产生 {tx_count} 笔")
 
-            # 2. 连续递增
-            inc_users = random.sample(self.user_ids, min(2, len(self.user_ids)))
-            for user in inc_users:
-                if user in self.seq_committed:
-                    continue
-                seq_len = random.randint(3, 5)
-                for _ in range(seq_len):
-                    txn = self._generate_increase_transaction(user)
-                    transactions.append(txn)
-                self.seq_committed.add(user)
-                self.seq_states.pop(user, None)
-                anomaly_log.append(f"连续递增：用户 {user} 产生 {seq_len} 笔")
+            # 2. 连续递增（概率注入）
+            if random.random() < INCREASE_SEQ_CHANCE:
+                inc_users = random.sample(self.user_ids, min(2, len(self.user_ids)))
+                for user in inc_users:
+                    if user in self.seq_committed:
+                        continue
+                    seq_len = random.randint(INCREASE_SEQ_LENGTH_MIN, INCREASE_SEQ_LENGTH_MAX)
+                    for _ in range(seq_len):
+                        txn = self._generate_increase_transaction(user)
+                        transactions.append(txn)
+                    self.seq_committed.add(user)
+                    self.seq_states.pop(user, None)
+                    anomaly_log.append(f"连续递增：用户 {user} 产生 {seq_len} 笔")
+                    break  # 只取一个用户
 
-            # 3. 大额交易
-            large_count = random.randint(2, 4)
-            for _ in range(large_count):
-                transactions.append(self._generate_large_transaction())
-            anomaly_log.append(f"大额交易：{large_count} 笔")
+            # 3. 大额交易（概率注入）
+            if random.random() < LARGE_TXN_CHANCE:
+                large_count = random.randint(LARGE_TXN_COUNT_MIN, LARGE_TXN_COUNT_MAX)
+                for _ in range(large_count):
+                    transactions.append(self._generate_large_transaction())
+                anomaly_log.append(f"大额交易：{large_count} 笔")
 
             # 4. 普通交易填充
             remaining = BATCH_SIZE - len(transactions)
@@ -221,7 +237,8 @@ class TransactionGenerator:
 
             # ---------- 发送到 Kafka ----------
             for txn in transactions:
-                kafka_msg = self._txn_to_kafka_msg(txn)
+                ip = self.user_ip_map.get(txn[1], "0.0.0.0")
+                kafka_msg = self._txn_to_kafka_msg(txn, ip_address=ip)
                 try:
                     self.kafka_producer.send(TOPIC_TRANSACTION, value=kafka_msg)
                 except Exception as e:

@@ -156,28 +156,27 @@ def get_history_stats(window_start: str = None, window_end: str = None):
 
 
 @app.get("/api/alerts/history")
-def get_alert_history(alert_type: str = None, limit: int = 100):
-    """查询历史告警记录（ADS 库）"""
+def get_alert_history(alert_type: str = None, keyword: str = None, limit: int = 500):
+    """查询历史告警记录（ADS 库），支持类型和关键词筛选"""
     ads_config = MYSQL_CONFIG.copy()
     ads_config["database"] = "ads_ecommerce"
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
+            conditions = []
+            params = []
             if alert_type:
-                cur.execute(
-                    """SELECT alert_type, user_id, transaction_id, amount, transaction_count,
-                              details, alert_time
-                       FROM risk_alerts WHERE alert_type = %s
-                       ORDER BY alert_time DESC LIMIT %s""",
-                    (alert_type, limit),
-                )
-            else:
-                cur.execute(
-                    """SELECT alert_type, user_id, transaction_id, amount, transaction_count,
-                              details, alert_time
-                       FROM risk_alerts ORDER BY alert_time DESC LIMIT %s""",
-                    (limit,),
-                )
+                conditions.append("alert_type = %s")
+                params.append(alert_type)
+            if keyword:
+                conditions.append(
+                    "(user_id LIKE %s OR transaction_id LIKE %s OR details LIKE %s)")
+                kw = f"%{keyword}%"
+                params.extend([kw, kw, kw])
+            where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            sql = f"SELECT alert_type, user_id, transaction_id, amount, transaction_count, details, alert_time FROM risk_alerts {where} ORDER BY alert_time DESC LIMIT %s"
+            params.append(limit)
+            cur.execute(sql, params)
             rows = cur.fetchall()
         conn.close()
         return [
@@ -252,6 +251,36 @@ def get_top_risky_users(limit: int = 5):
             {"user_id": r[0], "user_name": r[1], "alert_count": r[2]}
             for r in rows
         ]
+    except Exception as e:  # noqa: PIE786
+        return {"error": str(e)}
+
+
+@app.get("/api/alerts/stats")
+def get_alert_stats():
+    """返回告警类型分布和近24小时按小时统计"""
+    ads_config = MYSQL_CONFIG.copy()
+    ads_config["database"] = "ads_ecommerce"
+    try:
+        conn = pymysql.connect(**ads_config)
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT alert_type, COUNT(*) as cnt
+                   FROM risk_alerts
+                   GROUP BY alert_type
+                   ORDER BY cnt DESC"""
+            )
+            by_type = [{"alert_type": r[0], "count": r[1]} for r in cur.fetchall()]
+
+            cur.execute(
+                """SELECT DATE_FORMAT(alert_time, '%%H:00') as hour, COUNT(*) as cnt
+                   FROM risk_alerts
+                   WHERE alert_time >= NOW() - INTERVAL 24 HOUR
+                   GROUP BY DATE_FORMAT(alert_time, '%%H:00')
+                   ORDER BY hour"""
+            )
+            by_hour = [{"hour": r[0], "count": r[1]} for r in cur.fetchall()]
+        conn.close()
+        return {"by_type": by_type, "by_hour": by_hour}
     except Exception as e:  # noqa: PIE786
         return {"error": str(e)}
 

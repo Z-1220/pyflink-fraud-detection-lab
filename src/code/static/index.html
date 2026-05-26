@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>电商交易风险监控大屏</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 </head>
 <body>
@@ -35,8 +35,33 @@
             <div class="chart-panel">
                 <div id="trendChart" class="chart"></div>
             </div>
-            <div class="alarm-table">
-                <h3>实时告警列表</h3>
+        </div>
+
+        <div class="top-users-row">
+            <h3 class="section-title">&#127942; 风险用户排行 Top 5</h3>
+            <div class="top-users-list" id="topUsersList">
+                <span class="placeholder">等待数据...</span>
+            </div>
+        </div>
+
+        <div class="alarm-section">
+            <div class="alarm-toolbar">
+                <h3 class="section-title">实时告警列表</h3>
+                <div class="filter-group">
+                    <input type="text" id="filterInput" placeholder="搜索用户ID / IP / 详情...">
+                    <select id="typeFilter" onchange="applyFilter()">
+                        <option value="">全部类型</option>
+                        <option value="LARGE_AMOUNT">大额交易</option>
+                        <option value="HIGH_FREQUENCY">高频交易</option>
+                        <option value="CONTINUOUS_INCREASE">连续递增</option>
+                        <option value="FAILED_SURGE">失败飙升</option>
+                        <option value="IP_SHARING">IP共用</option>
+                    </select>
+                    <button class="filter-btn" onclick="applyFilter()">筛选</button>
+                    <span class="filter-count" id="filterCount">0 条</span>
+                </div>
+            </div>
+            <div class="alarm-scroll">
                 <table>
                     <thead>
                         <tr>
@@ -53,6 +78,6 @@
             </div>
         </div>
     </div>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=2"></script>
 </body>
 </html>

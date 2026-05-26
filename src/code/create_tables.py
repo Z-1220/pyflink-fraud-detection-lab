@@ -166,22 +166,36 @@ def init_base_data(conn):
         for cat in CATEGORIES:
             cur.execute("INSERT IGNORE INTO categories (category) VALUES (%s)", (cat,))
 
-        # 2. 为每个类别生成 6~12 个商品
+        # 2. 为每个类别生成 6~12 个商品（按类别设置合理价格区间）
+        CATEGORY_PRICE_RANGES = {
+            "electronics": (50, 5000),
+            "clothing": (10, 500),
+            "food": (1, 100),
+            "home": (20, 2000),
+            "books": (5, 100),
+            "sports": (10, 800),
+            "toys": (5, 300),
+            "health": (5, 200),
+            "automotive": (20, 3000),
+            "music": (5, 500),
+        }
         for cat in CATEGORIES:
+            lo, hi = CATEGORY_PRICE_RANGES.get(cat, (5, 500))
             for _ in range(random.randint(6, 12)):
                 pid = f"prod_{uuid.uuid4().hex[:8]}"
                 name = fake.word().capitalize() + " " + cat.capitalize()
-                price = round(random.uniform(5, 500), 2)
+                price = round(random.uniform(lo, hi), 2)
                 cur.execute(
                     "INSERT IGNORE INTO products (product_id, category, product_name, price) VALUES (%s,%s,%s,%s)",
                     (pid, cat, name, price)
                 )
 
-        # 3. 创建 300 个初始用户
+        # 3. 创建 300 个初始用户（IP 使用有限池，确保复用触发 IP 共用检测）
+        IP_POOL = [f"10.0.{i // 10}.{i % 10 + 1}" for i in range(30)]
         for _ in range(300):
             uid = f"user_{uuid.uuid4().hex[:8]}"
             uname = fake.user_name()
-            ip = fake.ipv4()
+            ip = random.choice(IP_POOL)
             atype = random.choice(["normal", "vip"])
             device = random.choice(["Chrome/Windows", "Safari/Mac", "Chrome/Android", "iOS App"])
             cur.execute(

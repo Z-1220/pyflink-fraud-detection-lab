@@ -1,88 +1,94 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #0b1a2e; color: #fff; font-family: 'Microsoft YaHei', sans-serif; overflow: hidden; }
+body { background: #0b1a2e; color: #fff; font-family: 'Microsoft YaHei', sans-serif; }
 
 .container {
     display: flex; flex-direction: column;
-    height: 100vh; padding: 20px; gap: 16px;
+    height: 100vh; padding: 14px 20px; gap: 10px;
 }
 
 .header { display: flex; justify-content: space-around; flex-shrink: 0; }
 
 .card {
     background: rgba(16, 46, 76, 0.8); border-radius: 10px;
-    padding: 20px; text-align: center; width: 22%;
+    padding: 14px; text-align: center; width: 22%;
 }
-.card .value { font-size: 36px; font-weight: bold; color: #00d4ff; }
-.card .label { font-size: 14px; color: #a0c0e0; margin-top: 5px; }
+.card .value { font-size: 30px; font-weight: bold; color: #00d4ff; }
+.card .label { font-size: 13px; color: #a0c0e0; margin-top: 4px; }
 
 .charts {
     display: grid; grid-template-columns: 2fr 1fr;
-    gap: 20px; flex-shrink: 0;
+    gap: 14px; flex-shrink: 0;
 }
 .chart-panel {
-    background: rgba(16, 46, 76, 0.8); border-radius: 10px; padding: 15px;
+    background: rgba(16, 46, 76, 0.8); border-radius: 10px; padding: 12px;
 }
-.chart { width: 100%; height: 280px; }
+.chart { width: 100%; height: 220px; }
 
 /* ---- 风险用户排行 ---- */
 .top-users-row {
     background: rgba(16, 46, 76, 0.8); border-radius: 10px;
-    padding: 12px 20px; flex-shrink: 0;
+    padding: 10px 16px; flex-shrink: 0;
 }
-.section-title { font-size: 15px; color: #a0c0e0; margin-bottom: 8px; }
-.top-users-list { display: flex; gap: 16px; align-items: center; }
+.section-title { font-size: 14px; color: #a0c0e0; margin-bottom: 6px; }
+.top-users-list { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .placeholder { color: #556; font-size: 13px; }
 
 .user-rank-item {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 6px;
     background: rgba(0, 212, 255, 0.08); border-radius: 8px;
-    padding: 8px 14px; min-width: 150px;
+    padding: 6px 12px; min-width: 140px;
 }
 .user-rank-item .rank {
-    font-size: 18px; font-weight: bold; width: 28px; text-align: center;
+    font-size: 16px; font-weight: bold; width: 24px; text-align: center;
 }
 .user-rank-item .rank.r1 { color: #ffd700; }
 .user-rank-item .rank.r2 { color: #c0c0c0; }
 .user-rank-item .rank.r3 { color: #cd7f32; }
 .user-rank-item .rank.rn { color: #668; }
-.user-rank-item .uname { font-size: 14px; flex: 1; }
-.user-rank-item .ucount { font-size: 12px; color: #ff4d4d; }
+.user-rank-item .uname { font-size: 13px; flex: 1; }
+.user-rank-item .ucount { font-size: 11px; color: #ff4d4d; }
 
 /* ---- 告警区域 ---- */
 .alarm-section {
     background: rgba(16, 46, 76, 0.8); border-radius: 10px;
-    padding: 12px 15px; flex: 1; display: flex; flex-direction: column;
-    min-height: 0;
+    padding: 10px 14px; flex: 1; display: flex; flex-direction: column;
+    min-height: 250px;
 }
 .alarm-toolbar {
-    display: flex; align-items: center; gap: 20px;
-    margin-bottom: 10px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 8px; flex-shrink: 0;
 }
 .alarm-toolbar .section-title { margin-bottom: 0; white-space: nowrap; }
 .filter-group {
-    display: flex; align-items: center; gap: 10px; flex: 1;
+    display: flex; align-items: center; gap: 8px; flex: 1;
 }
 .filter-group input {
     background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-    color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 13px;
-    width: 220px; outline: none;
+    color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 13px;
+    width: 200px; outline: none;
 }
 .filter-group input:focus { border-color: #00d4ff; }
 .filter-group input::placeholder { color: #556; }
 .filter-group select {
     background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-    color: #ccc; padding: 6px 10px; border-radius: 6px; font-size: 13px; outline: none;
+    color: #ccc; padding: 5px 8px; border-radius: 6px; font-size: 13px; outline: none;
 }
 .filter-group select:focus { border-color: #00d4ff; }
 .filter-group select option { background: #1a3a5c; color: #fff; }
+.filter-btn {
+    background: rgba(0, 212, 255, 0.2); border: 1px solid #00d4ff;
+    color: #00d4ff; padding: 5px 14px; border-radius: 6px; font-size: 13px;
+    cursor: pointer;
+}
+.filter-btn:hover { background: rgba(0, 212, 255, 0.35); }
 .filter-count { color: #556; font-size: 12px; white-space: nowrap; }
 
 .alarm-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .alarm-scroll table { width: 100%; border-collapse: collapse; }
 .alarm-scroll thead { position: sticky; top: 0; z-index: 1; }
 .alarm-scroll th, .alarm-scroll td {
-    padding: 7px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08);
-    font-size: 13px;
+    padding: 5px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08);
+    font-size: 12px;
 }
 .alarm-scroll th { background: #0d3660; }
 .alarm-scroll tbody tr:hover { background: rgba(255,255,255,0.04); }
@@ -90,7 +96,9 @@ body { background: #0b1a2e; color: #fff; font-family: 'Microsoft YaHei', sans-se
 .high-freq { color: #ffa500; }
 .large-amount { color: #ff4d4d; }
 .increase { color: #ffd700; }
+.failed-surge { color: #ff8c42; }
+.ip-sharing { color: #5cc7ff; }
 
-.alarm-scroll::-webkit-scrollbar { width: 6px; }
+.alarm-scroll::-webkit-scrollbar { width: 5px; }
 .alarm-scroll::-webkit-scrollbar-track { background: transparent; }
 .alarm-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
