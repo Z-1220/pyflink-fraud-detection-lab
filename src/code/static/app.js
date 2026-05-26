@@ -1,6 +1,7 @@
 const ws = new WebSocket(`ws://${location.host}/ws`);
 
 let totalAmount = 0, totalCount = 0, alarmCount = 0;
+let filterActive = false;
 const categoryMap = new Map();
 const trendData = [];
 const alarmList = [];
@@ -53,11 +54,7 @@ function updateTrend(data) {
 }
 
 function updateCategory(data) {
-    const prev = categoryMap.get(data.category) || { amount: 0, count: 0 };
-    categoryMap.set(data.category, {
-        amount: prev.amount + data.total_amount,
-        count: prev.count + data.transaction_count
-    });
+    categoryMap.set(data.category, { amount: data.total_amount, count: data.transaction_count });
     renderCategoryChart();
 }
 
@@ -66,8 +63,10 @@ function addAlarm(data) {
     document.getElementById('alarmCount').innerText = alarmCount;
     alarmList.unshift(data);
     if (alarmList.length > 200) alarmList.pop();
-    document.getElementById('filterCount').innerText = alarmList.length + ' 条';
-    renderAlarmTable(alarmList);
+    if (!filterActive) {
+        document.getElementById('filterCount').innerText = alarmList.length + ' 条';
+        renderAlarmTable(alarmList);
+    }
 }
 
 /* ========== 筛选 ========== */
@@ -75,6 +74,15 @@ async function applyFilter() {
     const keyword = document.getElementById('filterInput').value.trim();
     const type = document.getElementById('typeFilter').value;
 
+    if (!keyword && !type) {
+        // 无条件 → 退出筛选模式，恢复实时推送
+        filterActive = false;
+        document.getElementById('filterCount').innerText = alarmList.length + ' 条';
+        renderAlarmTable(alarmList);
+        return;
+    }
+
+    filterActive = true;
     let url = `/api/alerts/history?limit=500`;
     if (type) url += `&alert_type=${encodeURIComponent(type)}`;
     if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
@@ -180,9 +188,12 @@ function renderTrendChart() {
         xAxis: { type: 'category', data: trendData.map(d => d.time), axisLabel: { color: '#fff', fontSize: 10 } },
         yAxis: [
             { type: 'value', name: '金额(¥)', nameTextStyle: { color: '#aac' },
-              axisLabel: { color: '#aac', formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v } },
+              axisLabel: { color: '#aac', formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v },
+              splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
             { type: 'value', name: '笔数', nameTextStyle: { color: '#aac' },
-              axisLabel: { color: '#aac' } }
+              axisLabel: { color: '#aac' },
+              splitLine: { show: false },
+              min: 0, max: (v) => Math.max(v.max * 4, 50) }
         ],
         series: [
             { name: '金额', type: 'line', data: trendData.map(d => d.amount), smooth: true,

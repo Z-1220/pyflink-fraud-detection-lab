@@ -245,7 +245,6 @@ class TransactionGenerator:
                     print(f"⚠️ 发送 Kafka 失败: {e}")
             self.kafka_producer.flush()
 
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 批次完成 | {', '.join(anomaly_log)}")
 
         except pymysql.Error as e:
             self.conn.rollback()
