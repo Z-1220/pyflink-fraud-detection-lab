@@ -232,7 +232,7 @@ function renderRiskScoreChart(data) {
                    formatter: v => v.toFixed(2) },
                  splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
         yAxis: { type: 'category', data: names,
-                 axisLabel: { color: '#D6E4F0', fontSize: 14, rotate: -45, interval: 0 },
+                 axisLabel: { color: '#D6E4F0', fontSize: 14, rotate: -30, interval: 0 },
                  axisLine: { lineStyle: { color: 'rgba(255,255,255,0.10)' } } },
         series: [{
             type: 'bar',

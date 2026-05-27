@@ -369,7 +369,8 @@ def get_user_risk_scores(limit: int = 10):
         name_map = {}
 
     return [
-        {"user_id": uid, "user_name": name_map.get(uid, uid), "risk_score": round(score, 4)}
+        {"user_id": uid, "user_name": name_map.get(uid, uid[-8:] if len(uid) > 8 else uid),
+         "risk_score": round(score, 4)}
         for uid, score in top
     ]
 
