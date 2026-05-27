@@ -11,7 +11,6 @@ import traceback
 from datetime import datetime, timezone
 
 import pymysql
-from fastapi import FastAPI
 from pyflink.common import Duration, Time, WatermarkStrategy, Types, RestartStrategies
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.watermark_strategy import TimestampAssigner
@@ -30,16 +29,21 @@ from pyflink.datastream.functions import (
 )
 from pyflink.datastream.state import ListStateDescriptor, ValueStateDescriptor
 from pyflink.datastream.window import TumblingEventTimeWindows
-from starlette.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
 
 # ==================== 环境变量 ====================
 os.environ["JAVA_TOOL_OPTIONS"] = "-Dfile.encoding=UTF-8"
-PYTHON_EXEC = r"D:\PythonProject\00_Learning\pyflink_project\.venv\Scripts\python.exe"
-os.environ["PYFLINK_CLIENT_EXECUTABLE"] = PYTHON_EXEC
-os.environ["python.executable"] = PYTHON_EXEC
-os.environ["python.client.executable"] = PYTHON_EXEC
-os.environ["BEAM_PYTHON"] = PYTHON_EXEC
+_PYFLINK_VENV = os.environ.get(
+    "PYFLINK_VENV",
+    r"D:\PythonProject\00_Learning\pyflink_project\.venv",
+)
+PYTHON_EXEC = os.environ.get(
+    "PYFLINK_PYTHON_EXEC",
+    os.path.join(_PYFLINK_VENV, "Scripts", "python.exe"),
+)
+os.environ.setdefault("PYFLINK_CLIENT_EXECUTABLE", PYTHON_EXEC)
+os.environ.setdefault("python.executable", PYTHON_EXEC)
+os.environ.setdefault("python.client.executable", PYTHON_EXEC)
+os.environ.setdefault("BEAM_PYTHON", PYTHON_EXEC)
 os.environ["PYTHON_LOOPBACK_MODE"] = "1"
 os.environ["FLINK_PYTHON_WORKER_EXIT_TIMEOUT"] = "60000"
 
@@ -74,63 +78,20 @@ ADS_MYSQL_CONFIG = {
     "autocommit": True,
 }
 
-app = FastAPI()
+# 解析后元组字段索引（ParseTransaction 返回的 12 元组）
+T_IDX_USER_ID = 0
+T_IDX_AMOUNT = 1
+T_IDX_CATEGORY = 2
+T_IDX_TIMESTAMP = 3
+T_IDX_TXN_ID = 4
+T_IDX_RESULT = 5
+T_IDX_TXN_TYPE = 6
+T_IDX_IP_ADDRESS = 7
+T_IDX_PRODUCT_ID = 8
+T_IDX_PRODUCT_NAME = 9
+T_IDX_PROVINCE = 10
+T_IDX_CITY = 11
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-static_dir = os.path.join(current_dir, "static")
-
-ECOM_MYSQL_CONFIG = {
-    "host": "localhost", "port": 3306, "user": "root", "password": "123456",
-    "database": "ecommerce", "charset": "utf8mb4",
-}
-
-# ---- API 路由必须在 StaticFiles mount 之前注册 ----
-@app.get("/api/top-risky-users")
-def _top_risky_users(limit: int = 5):
-    try:
-        conn = pymysql.connect(**ADS_MYSQL_CONFIG)
-        with conn.cursor() as cur:
-            cur.execute(
-                """SELECT ra.user_id, u.user_name, COUNT(*) as alert_count
-                   FROM risk_alerts ra JOIN ecommerce.users u ON ra.user_id = u.user_id
-                   GROUP BY ra.user_id, u.user_name
-                   ORDER BY alert_count DESC LIMIT %s""", (limit,))
-            rows = cur.fetchall()
-        conn.close()
-        return [{"user_id": r[0], "user_name": r[1], "alert_count": r[2]} for r in rows]
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/api/alerts/stats")
-def _alert_stats():
-    try:
-        conn = pymysql.connect(**ADS_MYSQL_CONFIG)
-        with conn.cursor() as cur:
-            cur.execute("SELECT alert_type, COUNT(*) as cnt FROM risk_alerts GROUP BY alert_type ORDER BY cnt DESC")
-            by_type = [{"alert_type": r[0], "count": r[1]} for r in cur.fetchall()]
-            cur.execute(
-                """SELECT DATE_FORMAT(alert_time, '%%H:00') as hour, COUNT(*) as cnt
-                   FROM risk_alerts WHERE alert_time >= NOW() - INTERVAL 24 HOUR
-                   GROUP BY DATE_FORMAT(alert_time, '%%H:00') ORDER BY hour""")
-            by_hour = [{"hour": r[0], "count": r[1]} for r in cur.fetchall()]
-        conn.close()
-        return {"by_type": by_type, "by_hour": by_hour}
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/favicon.ico")
-async def _favicon():
-    from fastapi.responses import Response
-    return Response(status_code=204)
-
-
-@app.get("/", response_class=HTMLResponse)
-async def _root():
-    with open(os.path.join(static_dir, "index.html"), "r", encoding="utf-8") as f:
-        return f.read()
-
-# StaticFiles mount 必须在最后
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 class TransactionTimestampAssigner(TimestampAssigner):
     def extract_timestamp(self, value, record_timestamp: int) -> int:
@@ -141,18 +102,18 @@ class ParseTransaction(MapFunction):
     def map(self, value: str):
         txn = json.loads(value)
         return (
-            txn["user_id"],                          # [0]
-            float(txn["amount"]),                    # [1]
-            txn.get("category", "unknown"),          # [2]
-            int(txn["timestamp"]),                   # [3]
-            txn["transaction_id"],                   # [4]
-            txn.get("result", "success"),            # [5]
-            txn.get("transaction_type", "purchase"), # [6]
-            txn.get("ip_address", "0.0.0.0"),        # [7]
-            txn.get("product_id", "unknown"),        # [8]
-            txn.get("product_name", "unknown"),      # [9]
-            txn.get("province", "未知"),              # [10]
-            txn.get("city", "未知"),                  # [11]
+            txn["user_id"],                          # T_IDX_USER_ID
+            float(txn["amount"]),                    # T_IDX_AMOUNT
+            txn.get("category", "unknown"),          # T_IDX_CATEGORY
+            int(txn["timestamp"]),                   # T_IDX_TIMESTAMP
+            txn["transaction_id"],                   # T_IDX_TXN_ID
+            txn.get("result", "success"),            # T_IDX_RESULT
+            txn.get("transaction_type", "purchase"), # T_IDX_TXN_TYPE
+            txn.get("ip_address", "0.0.0.0"),        # T_IDX_IP_ADDRESS
+            txn.get("product_id", "unknown"),        # T_IDX_PRODUCT_ID
+            txn.get("product_name", "unknown"),      # T_IDX_PRODUCT_NAME
+            txn.get("province", "未知"),              # T_IDX_PROVINCE
+            txn.get("city", "未知"),                  # T_IDX_CITY
         )
 
 
@@ -162,7 +123,7 @@ class GlobalAccumulator(MapFunction):
         self.count = 0
 
     def map(self, value):
-        self.total += value[1]
+        self.total += value[T_IDX_AMOUNT]
         self.count += 1
         return json.dumps({
             "total_amount": round(self.total, 2),
@@ -184,8 +145,8 @@ class HighFrequencyDetector(KeyedProcessFunction):
 
     def process_element(self, value, ctx):
         try:
-            user_id = value[0]
-            ts = value[3]
+            user_id = value[T_IDX_USER_ID]
+            ts = value[T_IDX_TIMESTAMP]
 
             ts_list = self.timestamps_state.get()
             if ts_list is None:
@@ -270,16 +231,16 @@ class ContinuousIncreaseDetector(KeyedProcessFunction):
 
     def process_element(self, value, ctx):
         try:
-            user_id = value[0]
-            amount = value[1]
-            ts = value[3]
-            txn_id = value[4]
+            user_id = value[T_IDX_USER_ID]
+            amount = value[T_IDX_AMOUNT]
+            ts = value[T_IDX_TIMESTAMP]
+            txn_id = value[T_IDX_TXN_ID]
 
-            self.last_amounts.add(amount)
             amounts = list(self.last_amounts.get() or [])
+            amounts.append(amount)
             if len(amounts) > 10:
                 amounts = amounts[-10:]
-                self.last_amounts.update(amounts)
+            self.last_amounts.update(amounts)
 
             if len(amounts) >= INCREASE_MIN_SEQ:
                 inc_count = 1
@@ -440,7 +401,7 @@ class IPSharingDetector(ProcessWindowFunction):
     def process(self, ip: str, context, elements) -> list:
         user_ids = set()
         for e in elements:
-            user_ids.add(e[0])
+            user_ids.add(e[T_IDX_USER_ID])
         if len(user_ids) < IP_SHARING_THRESHOLD:
             return []
         window_start = context.window().start
@@ -484,10 +445,10 @@ class ProductWindowFunction(ProcessWindowFunction):
         count = 0
         category = ""
         for e in elements:
-            total += e[1]
+            total += e[T_IDX_AMOUNT]
             count += 1
             if not category:
-                category = e[2]
+                category = e[T_IDX_CATEGORY]
         result = {
             "window_start": context.window().start,
             "window_end": context.window().end,
@@ -508,7 +469,7 @@ class RegionWindowFunction(ProcessWindowFunction):
         total = 0.0
         count = 0
         for e in elements:
-            total += e[1]
+            total += e[T_IDX_AMOUNT]
             count += 1
         result = {
             "province": province,
@@ -531,7 +492,7 @@ class GlobalWindowFunction(ProcessWindowFunction):
         total = 0.0
         count = 0
         for e in elements:
-            total += e[1]
+            total += e[T_IDX_AMOUNT]
             count += 1
         window_start = context.window().start
         window_end = context.window().end
@@ -578,7 +539,7 @@ class CategoryWindowFunction(ProcessWindowFunction):
         total = 0.0
         count = 0
         for e in elements:
-            total += e[1]
+            total += e[T_IDX_AMOUNT]
             count += 1
         window_start = context.window().start
         window_end = context.window().end
@@ -639,6 +600,7 @@ class TimeDecayRiskScorer(KeyedProcessFunction):
         alert_type = alert.get("alert_type", "UNKNOWN")
         w = self._weights.get(alert_type, 0.10)
 
+        # 两种来源均为 epoch 毫秒，保持一致性
         try:
             now = datetime.fromisoformat(alert["alert_time"]).timestamp() * 1000.0
         except (KeyError, ValueError):
@@ -678,9 +640,13 @@ def main():
         "python.fn-execution.bundle.time": "0",
     })
 
+    _jars_dir = os.environ.get(
+        "PYFLINK_JARS_DIR",
+        r"D:\PythonProject\00_Learning\pyflink_project\jars",
+    )
     env.add_jars(
-        "file:///D:/PythonProject/00_Learning/pyflink_project/jars/flink-connector-kafka-3.1.0-1.18.jar",
-        "file:///D:/PythonProject/00_Learning/pyflink_project/jars/kafka-clients-3.6.1.jar",
+        f"file:///{_jars_dir}/flink-connector-kafka-3.1.0-1.18.jar",
+        f"file:///{_jars_dir}/kafka-clients-3.6.1.jar",
     )
 
     kafka_source = (
@@ -705,29 +671,29 @@ def main():
     global_acc_stream = parsed_stream.map(GlobalAccumulator(), output_type=Types.STRING())
 
     high_freq_alarm_stream = (
-        parsed_stream.key_by(lambda v: v[0])
+        parsed_stream.key_by(lambda v: v[T_IDX_USER_ID])
         .process(HighFrequencyDetector(), output_type=Types.STRING())
     )
 
     increase_alarm_stream = (
-        parsed_stream.key_by(lambda v: v[0])
+        parsed_stream.key_by(lambda v: v[T_IDX_USER_ID])
         .process(ContinuousIncreaseDetector(), output_type=Types.STRING())
     )
 
     large_alarm_stream = (
-        parsed_stream.filter(lambda t: t[1] > HIGH_AMOUNT_THRESHOLD)
+        parsed_stream.filter(lambda t: t[T_IDX_AMOUNT] > HIGH_AMOUNT_THRESHOLD)
         .map(LargeAmountAlertSink(), output_type=Types.STRING())
     )
 
     failed_surge_stream = (
-        parsed_stream.filter(lambda t: t[5] == "failed")
+        parsed_stream.filter(lambda t: t[T_IDX_RESULT] == "failed")
         .key_by(lambda x: "global")
         .window(TumblingEventTimeWindows.of(Time.seconds(FAILED_SURGE_WINDOW_SECONDS)))
         .process(FailedTransactionSurgeDetector(), output_type=Types.STRING())
     )
 
     ip_sharing_stream = (
-        parsed_stream.key_by(lambda x: x[7])
+        parsed_stream.key_by(lambda x: x[T_IDX_IP_ADDRESS])
         .window(TumblingEventTimeWindows.of(Time.seconds(IP_SHARING_WINDOW_SECONDS)))
         .process(IPSharingDetector(), output_type=Types.STRING())
     )
@@ -749,19 +715,19 @@ def main():
     )
 
     category_window_stream = (
-        parsed_stream.key_by(lambda x: x[2])
+        parsed_stream.key_by(lambda x: x[T_IDX_CATEGORY])
         .window(TumblingEventTimeWindows.of(Time.seconds(5)))
         .process(CategoryWindowFunction(), output_type=Types.STRING())
     )
 
     product_window_stream = (
-        parsed_stream.key_by(lambda x: x[9])
+        parsed_stream.key_by(lambda x: x[T_IDX_PRODUCT_NAME])
         .window(TumblingEventTimeWindows.of(Time.seconds(5)))
         .process(ProductWindowFunction(), output_type=Types.STRING())
     )
 
     region_window_stream = (
-        parsed_stream.key_by(lambda x: x[10])
+        parsed_stream.key_by(lambda x: x[T_IDX_PROVINCE])
         .window(TumblingEventTimeWindows.of(Time.seconds(5)))
         .process(RegionWindowFunction(), output_type=Types.STRING())
     )

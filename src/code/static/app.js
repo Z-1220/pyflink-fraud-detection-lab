@@ -77,6 +77,9 @@ ws.onmessage = (event) => {
             case 'region_aggregated_events':
                 updateRegion(msg.data);
                 break;
+            case 'user_risk_scores':
+                fetchRiskScores();
+                break;
             case 'alarm_events':
                 addAlarm(msg.data);
                 break;
@@ -88,7 +91,11 @@ ws.onmessage = (event) => {
 
 /* ========== 指标卡 ========== */
 function updateTotalGauge() {
-    const ratio = totalCount > 0 ? Math.min(Math.round(alarmCount / totalCount * 100), 100) : 0;
+    const ratio = totalCount > 0 ? Math.min(Math.ceil(alarmCount / totalCount * 100), 100) : 0;
+    _setTotalGaugeValue(ratio);
+}
+
+function _setTotalGaugeValue(ratio) {
     const cfg = GAUGE_CONFIG.TOTAL;
     gaugeCharts.TOTAL.setOption({
         series: [{
@@ -98,7 +105,7 @@ function updateTotalGauge() {
             ] } },
             detail: { formatter: '{value}%', color: cfg.color },
             title: { color: cfg.color },
-            data: [{ value: ratio, name: '告警占比' }]
+            data: [{ value: ratio, name: cfg.name }]
         }]
     });
 }
@@ -221,6 +228,10 @@ function renderRiskScoreChart(data) {
     const names = hasData ? data.map(d => d.user_name).reverse() : [];
     const scores = hasData ? data.map(d => d.risk_score).reverse() : [];
     riskScoreChart.setOption({
+        animationDuration: 600,
+        animationEasing: 'cubicOut',
+        animationDurationUpdate: 500,
+        animationEasingUpdate: 'cubicInOut',
         title: { text: '用户风险评分 Top 10', left: 'center', top: 4,
                  textStyle: { color: '#D6E4F0', fontSize: 18 } },
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
@@ -290,18 +301,7 @@ function renderGauges(byType) {
     });
     // 总告警占比仪表盘（告警总数 / 交易总数）
     const ratio = totalCount > 0 ? Math.min(Math.max(1, Math.ceil(total / totalCount * 100)), 100) : 0;
-    const cfgTotal = GAUGE_CONFIG.TOTAL;
-    gaugeCharts.TOTAL.setOption({
-        series: [{
-            axisLine: { lineStyle: { width: 6, color: [
-                [ratio / 100, cfgTotal.color],
-                [1, 'rgba(255,255,255,0.10)']
-            ] } },
-            detail: { formatter: '{value}%', color: cfgTotal.color },
-            title: { color: cfgTotal.color },
-            data: [{ value: ratio, name: '告警占比' }]
-        }]
-    });
+    _setTotalGaugeValue(ratio);
 }
 
 /* ========== 中国地图热力图 ========== */

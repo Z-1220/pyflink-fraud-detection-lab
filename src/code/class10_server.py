@@ -10,7 +10,7 @@ import json
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from threading import Thread
+from threading import Lock, Thread
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -47,11 +47,10 @@ os.makedirs(static_dir, exist_ok=True)
 clients: set[WebSocket] = set()
 
 # 内存缓存：省份聚合数据 + 用户风险评分（由 Kafka 消费者线程更新）
-import threading
 region_cache: dict[str, dict] = {}
-region_cache_lock = threading.Lock()
+region_cache_lock = Lock()
 risk_score_cache: dict[str, float] = {}
-risk_score_lock = threading.Lock()
+risk_score_lock = Lock()
 
 
 async def broadcast(message: str):
@@ -67,38 +66,48 @@ async def broadcast(message: str):
 
 
 def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
-    """后台线程：消费 Kafka 并调度广播到主事件循环"""
-    consumer = KafkaConsumer(
-        *TOPICS,
-        bootstrap_servers=KAFKA_BOOTSTRAP,
-        group_id=GROUP_ID,
-        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-        auto_offset_reset="latest",
-        enable_auto_commit=True,
-    )
-    print(f"📡 Kafka 消费者启动，监听主题: {TOPICS}")
-    for msg in consumer:
-        payload = {"topic": msg.topic, "data": msg.value}
-        asyncio.run_coroutine_threadsafe(broadcast(json.dumps(payload)), loop)
-        # 缓存省份聚合数据
-        if msg.topic == "region_aggregated_events":
-            data = msg.value
-            prov = data.get("province", "")
-            with region_cache_lock:
-                region_cache[prov] = {
-                    "province": prov,
-                    "total_amount": data.get("total_amount", 0),
-                    "transaction_count": data.get("transaction_count", 0),
-                }
+    """后台线程：消费 Kafka 并调度广播到主事件循环，异常时自动重连"""
+    import time as _time
+    while True:
+        try:
+            consumer = KafkaConsumer(
+                *TOPICS,
+                bootstrap_servers=KAFKA_BOOTSTRAP,
+                group_id=GROUP_ID,
+                value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+                auto_offset_reset="latest",
+                enable_auto_commit=True,
+            )
+            print(f"📡 Kafka 消费者启动，监听主题: {TOPICS}")
+            for msg in consumer:
+                payload = {"topic": msg.topic, "data": msg.value}
+                asyncio.run_coroutine_threadsafe(broadcast(json.dumps(payload)), loop)
+                # 缓存省份聚合数据
+                if msg.topic == "region_aggregated_events":
+                    data = msg.value
+                    prov = data.get("province", "")
+                    with region_cache_lock:
+                        region_cache[prov] = {
+                            "province": prov,
+                            "total_amount": data.get("total_amount", 0),
+                            "transaction_count": data.get("transaction_count", 0),
+                        }
 
-        # 缓存用户风险评分
-        if msg.topic == "user_risk_scores":
-            data = msg.value
-            uid = data.get("user_id", "")
-            score = data.get("risk_score", 0.0)
-            if uid and uid != "GLOBAL":
-                with risk_score_lock:
-                    risk_score_cache[uid] = score
+                # 缓存用户风险评分
+                if msg.topic == "user_risk_scores":
+                    data = msg.value
+                    uid = data.get("user_id", "")
+                    score = data.get("risk_score", 0.0)
+                    if uid and uid != "GLOBAL":
+                        with risk_score_lock:
+                            risk_score_cache[uid] = score
+        except Exception as e:
+            print(f"⚠️ Kafka 消费者异常，5秒后重连: {e}")
+            try:
+                consumer.close()
+            except Exception:
+                pass
+            _time.sleep(5)
 
 
 @asynccontextmanager
