@@ -41,16 +41,16 @@ Object.keys(gaugeCharts).forEach(key => {
     gaugeCharts[key].setOption({
         series: [{
             type: 'gauge', startAngle: 210, endAngle: -30,
-            center: ['50%', '62%'], radius: '75%',
+            center: ['50%', '62%'], radius: '68%',
             min: 0, max: 100,
-            axisLine: { show: true, lineStyle: { width: 6, color: [[1, 'rgba(255,255,255,0.10)']] } },
+            axisLine: { show: true, lineStyle: { width: 5, color: [[1, 'rgba(255,255,255,0.10)']] } },
             axisTick: { show: false },
             splitLine: { show: false },
             axisLabel: { show: false },
-            detail: { offsetCenter: [0, 28], valueAnimation: true,
-                      formatter: isTotal ? '{value}%' : '{value}%',
-                      fontSize: 15, color: cfg.color },
-            title: { offsetCenter: [0, '88%'], fontSize: 12, color: cfg.color },
+            detail: { offsetCenter: [0, 20], valueAnimation: true,
+                      formatter: '{value}%',
+                      fontSize: 13, color: cfg.color },
+            title: { offsetCenter: [0, '92%'], fontSize: 10, color: cfg.color },
             data: [{ value: 0, name: cfg.name }]
         }]
     });
