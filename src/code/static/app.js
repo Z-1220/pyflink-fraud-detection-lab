@@ -52,7 +52,6 @@ const GAUGE_CONFIG = {
 // 初始化所有仪表盘为空
 Object.keys(gaugeCharts).forEach(key => {
     const cfg = GAUGE_CONFIG[key];
-    const isTotal = key === 'TOTAL';
     gaugeCharts[key].setOption({
         series: [{
             type: 'gauge', startAngle: 210, endAngle: -30,
@@ -263,9 +262,27 @@ async function fetchSnapshot() {
 }
 
 /* ========== 风险评分榜 ========== */
+let _riskScoreTimer = null;
+
 function fetchRiskScores() {
-    // 由 WebSocket user_risk_scores 触发，调用 snapshot 刷新
-    fetchSnapshot();
+    // WebSocket 触发时仅刷新风险评分（轻量），5 秒内去重
+    if (_riskScoreTimer) return;
+    _riskScoreTimer = setTimeout(() => {
+        _riskScoreTimer = null;
+        _doFetchRiskScores();
+    }, 5000);
+}
+
+async function _doFetchRiskScores() {
+    try {
+        const resp = await fetch('/api/user-risk-scores?limit=10');
+        const data = await resp.json();
+        if (Array.isArray(data) && data.length > 0) {
+            renderRiskScoreChart(data);
+        }
+    } catch (e) {
+        console.error('获取风险评分失败', e);
+    }
 }
 
 function renderRiskScoreChart(data) {

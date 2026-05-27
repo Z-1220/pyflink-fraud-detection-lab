@@ -3,12 +3,15 @@ import json
 import logging
 import os
 
-# ---- 日志：统一格式，INFO 级别 ----
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
+
+def init_logging():
+    """统一日志格式，由各入口点显式调用。"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
 
 # ---- MySQL 配置，密码优先从环境变量 ----
 _config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mysql_config.json")

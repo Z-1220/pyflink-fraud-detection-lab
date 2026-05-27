@@ -15,7 +15,7 @@ import uuid
 import json
 from datetime import datetime, timedelta
 from kafka import KafkaProducer
-from config_loader import MYSQL_CONFIG
+from config_loader import MYSQL_CONFIG, init_logging
 
 # ==================== 配置 ====================
 ECOM_MYSQL_CONFIG = {**MYSQL_CONFIG, "database": "ecommerce"}
@@ -277,6 +277,7 @@ class TransactionGenerator:
 
 
 def main():
+    init_logging()
     # Kafka Producer（JSON序列化）
     kafka_producer = KafkaProducer(
         bootstrap_servers=KAFKA_BOOTSTRAP,

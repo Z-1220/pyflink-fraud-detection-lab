@@ -12,7 +12,7 @@ import pymysql
 import uuid
 import random
 from faker import Faker
-from config_loader import MYSQL_CONFIG
+from config_loader import MYSQL_CONFIG, init_logging
 
 # ==================== 中国省份城市映射 ====================
 # 31个省级行政区，每个省份下若干主要城市（用于模拟用户地理分布）
@@ -312,6 +312,7 @@ def process_database(db_config, db_name, tables_sql, truncate_order, init_func=N
 
 
 def main():
+    init_logging()
     # 1. 确保两个数据库存在
     create_databases_if_not_exists()
     print("✅ 数据库 ecommerce 和 ads_ecommerce 已就绪")

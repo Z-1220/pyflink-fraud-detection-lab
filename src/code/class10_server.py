@@ -17,7 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from kafka import KafkaConsumer
 import pymysql
-from config_loader import MYSQL_CONFIG
+from config_loader import MYSQL_CONFIG, init_logging
+
+init_logging()
 
 # ==================== 配置 ====================
 KAFKA_BOOTSTRAP = "localhost:9092"
@@ -69,6 +71,7 @@ def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
     """后台线程：消费 Kafka 并调度广播到主事件循环，异常时自动重连"""
     import time as _time
     while True:
+        consumer = None
         try:
             consumer = KafkaConsumer(
                 *TOPICS,
@@ -111,10 +114,11 @@ def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
                             risk_score_cache[uid] = score
         except Exception as e:
             logging.warning("Kafka 消费者异常，5秒后重连: %s", e)
-            try:
-                consumer.close()
-            except Exception:
-                pass
+            if consumer is not None:
+                try:
+                    consumer.close()
+                except Exception:
+                    pass
             _time.sleep(5)
 
 
@@ -160,6 +164,91 @@ async def websocket_endpoint(websocket: WebSocket):
         logging.info("客户端断开，当前连接数: %d", len(clients) - 1)
     finally:
         clients.discard(websocket)
+
+
+# ==================== 共享查询辅助函数 ====================
+
+def _query_top_risky_users(cur, limit: int = 5):
+    """查询告警最多的用户（跨库 JOIN，fallback 分步查询）"""
+    try:
+        cur.execute(
+            """SELECT ra.user_id, u.user_name, COUNT(*) as alert_count
+               FROM risk_alerts ra JOIN ecommerce.users u ON ra.user_id = u.user_id
+               GROUP BY ra.user_id, u.user_name
+               ORDER BY alert_count DESC LIMIT %s""",
+            (limit,),
+        )
+        rows = cur.fetchall()
+    except pymysql.Error:
+        cur.execute(
+            """SELECT user_id, COUNT(*) as alert_count
+               FROM risk_alerts GROUP BY user_id
+               ORDER BY alert_count DESC LIMIT %s""",
+            (limit,),
+        )
+        alert_rows = cur.fetchall()
+        if not alert_rows:
+            return []
+        user_ids = [r[0] for r in alert_rows]
+        alert_map = {r[0]: r[1] for r in alert_rows}
+        conn_ecom = pymysql.connect(**{**MYSQL_CONFIG, "database": "ecommerce"})
+        try:
+            with conn_ecom.cursor() as cur2:
+                placeholders = ",".join(["%s"] * len(user_ids))
+                cur2.execute(
+                    f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
+                    user_ids,
+                )
+                name_map = {r[0]: r[1] for r in cur2.fetchall()}
+            rows = [(uid, name_map.get(uid, "unknown"), cnt) for uid, cnt in alert_rows]
+        finally:
+            conn_ecom.close()
+    return [{"user_id": r[0], "user_name": r[1], "alert_count": r[2]} for r in rows]
+
+
+def _query_alert_type_distribution(cur):
+    """查询告警类型分布"""
+    cur.execute(
+        "SELECT alert_type, COUNT(*) as cnt FROM risk_alerts GROUP BY alert_type ORDER BY cnt DESC")
+    return [{"alert_type": r[0], "count": r[1]} for r in cur.fetchall()]
+
+
+def _query_region_alerts(cur):
+    """查询各省份告警数量（JOIN risk_alerts + users）"""
+    cur.execute(
+        """SELECT u.province, COUNT(*) as alert_count
+           FROM risk_alerts ra JOIN ecommerce.users u ON ra.user_id = u.user_id
+           WHERE u.province IS NOT NULL
+           GROUP BY u.province""")
+    return [{"province": r[0], "alert_count": r[1]} for r in cur.fetchall()]
+
+
+def _query_risk_scores(limit: int = 10):
+    """从 Kafka 缓存读取风险评分，JOIN 用户名称"""
+    with risk_score_lock:
+        items = list(risk_score_cache.items())
+    if not items:
+        return []
+    items.sort(key=lambda x: x[1], reverse=True)
+    top = items[:limit]
+    ecom_config = {**MYSQL_CONFIG, "database": "ecommerce"}
+    try:
+        conn = pymysql.connect(**ecom_config)
+        with conn.cursor() as cur:
+            placeholders = ",".join(["%s"] * len(top))
+            cur.execute(
+                f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
+                [t[0] for t in top],
+            )
+            name_map = {r[0]: r[1] for r in cur.fetchall()}
+        conn.close()
+    except Exception:
+        name_map = {}
+    return [
+        {"user_id": uid, "user_name": name_map.get(uid, uid[-8:] if len(uid) > 8 else uid),
+         "risk_score": round(score, 4)}
+        for uid, score in top
+    ]
 
 
 # ==================== REST API ====================
@@ -254,60 +343,15 @@ def get_alert_history(alert_type: str = None, keyword: str = None, limit: int = 
 
 @app.get("/api/top-risky-users")
 def get_top_risky_users(limit: int = 5):
-    """返回告警次数最多的用户排名（跨库 JOIN，fallback 分步查询）"""
+    """返回告警次数最多的用户排名"""
     ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
-            try:
-                # 尝试跨库 JOIN
-                cur.execute(
-                    """SELECT ra.user_id, u.user_name, COUNT(*) as alert_count
-                       FROM risk_alerts ra
-                       JOIN ecommerce.users u ON ra.user_id = u.user_id
-                       GROUP BY ra.user_id, u.user_name
-                       ORDER BY alert_count DESC
-                       LIMIT %s""",
-                    (limit,),
-                )
-                rows = cur.fetchall()
-            except pymysql.Error:
-                # fallback: 分步查询再合并
-                cur.execute(
-                    """SELECT user_id, COUNT(*) as alert_count
-                       FROM risk_alerts
-                       GROUP BY user_id
-                       ORDER BY alert_count DESC
-                       LIMIT %s""",
-                    (limit,),
-                )
-                alert_rows = cur.fetchall()
-                if not alert_rows:
-                    rows = []
-                else:
-                    user_ids = [r[0] for r in alert_rows]
-                    alert_map = {r[0]: r[1] for r in alert_rows}
-                    conn_ecom = pymysql.connect(**MYSQL_CONFIG)
-                    try:
-                        with conn_ecom.cursor() as cur2:
-                            placeholders = ",".join(["%s"] * len(user_ids))
-                            cur2.execute(
-                                f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
-                                user_ids,
-                            )
-                            name_map = {r[0]: r[1] for r in cur2.fetchall()}
-                        rows = [
-                            (uid, name_map.get(uid, "unknown"), cnt)
-                            for uid, cnt in alert_rows
-                        ]
-                    finally:
-                        conn_ecom.close()
+            result = _query_top_risky_users(cur, limit)
         conn.close()
-        return [
-            {"user_id": r[0], "user_name": r[1], "alert_count": r[2]}
-            for r in rows
-        ]
-    except Exception as e:  # noqa: PIE786
+        return result
+    except Exception as e:
         return {"error": str(e)}
 
 
@@ -318,25 +362,15 @@ def get_alert_stats():
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
-            cur.execute(
-                """SELECT alert_type, COUNT(*) as cnt
-                   FROM risk_alerts
-                   GROUP BY alert_type
-                   ORDER BY cnt DESC"""
-            )
-            by_type = [{"alert_type": r[0], "count": r[1]} for r in cur.fetchall()]
-
+            by_type = _query_alert_type_distribution(cur)
             cur.execute(
                 """SELECT DATE_FORMAT(alert_time, '%%H:00') as hour, COUNT(*) as cnt
-                   FROM risk_alerts
-                   WHERE alert_time >= NOW() - INTERVAL 24 HOUR
-                   GROUP BY DATE_FORMAT(alert_time, '%%H:00')
-                   ORDER BY hour"""
-            )
+                   FROM risk_alerts WHERE alert_time >= NOW() - INTERVAL 24 HOUR
+                   GROUP BY DATE_FORMAT(alert_time, '%%H:00') ORDER BY hour""")
             by_hour = [{"hour": r[0], "count": r[1]} for r in cur.fetchall()]
         conn.close()
         return {"by_type": by_type, "by_hour": by_hour}
-    except Exception as e:  # noqa: PIE786
+    except Exception as e:
         return {"error": str(e)}
 
 
@@ -349,21 +383,14 @@ def get_region_stats():
 
 @app.get("/api/region-alert-stats")
 def get_region_alert_stats():
-    """返回各省份风险告警数量（JOIN risk_alerts + users）"""
+    """返回各省份风险告警数量"""
     ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
-            cur.execute(
-                """SELECT u.province, COUNT(*) as alert_count
-                   FROM risk_alerts ra
-                   JOIN ecommerce.users u ON ra.user_id = u.user_id
-                   WHERE u.province IS NOT NULL
-                   GROUP BY u.province"""
-            )
-            rows = cur.fetchall()
+            result = _query_region_alerts(cur)
         conn.close()
-        return [{"province": r[0], "alert_count": r[1]} for r in rows]
+        return result
     except Exception as e:
         return {"error": str(e)}
 
@@ -371,32 +398,10 @@ def get_region_alert_stats():
 @app.get("/api/user-risk-scores")
 def get_user_risk_scores(limit: int = 10):
     """返回Flink实时计算的时间衰减风险评分（从Kafka缓存读取）"""
-    with risk_score_lock:
-        items = list(risk_score_cache.items())
-    if not items:
-        return []
-    items.sort(key=lambda x: x[1], reverse=True)
-    top = items[:limit]
-
-    ecom_config = {**MYSQL_CONFIG, "database": "ecommerce"}
     try:
-        conn = pymysql.connect(**ecom_config)
-        with conn.cursor() as cur:
-            placeholders = ",".join(["%s"] * len(top))
-            cur.execute(
-                f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
-                [t[0] for t in top],
-            )
-            name_map = {r[0]: r[1] for r in cur.fetchall()}
-        conn.close()
-    except Exception:
-        name_map = {}
-
-    return [
-        {"user_id": uid, "user_name": name_map.get(uid, uid[-8:] if len(uid) > 8 else uid),
-         "risk_score": round(score, 4)}
-        for uid, score in top
-    ]
+        return _query_risk_scores(limit)
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/api/export/alerts")
@@ -499,70 +504,17 @@ def export_stats(window_start: str = None, window_end: str = None):
 def get_dashboard_snapshot():
     """合并轮询：一次返回 Top5 排行、风险评分、告警统计、省份告警。"""
     ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
-    ecom_config = {**MYSQL_CONFIG, "database": "ecommerce"}
     result = {}
     try:
         conn = pymysql.connect(**ads_config)
         try:
             with conn.cursor() as cur:
-                # Top 5 风险用户
-                try:
-                    cur.execute(
-                        """SELECT ra.user_id, u.user_name, COUNT(*) as alert_count
-                           FROM risk_alerts ra JOIN ecommerce.users u ON ra.user_id = u.user_id
-                           GROUP BY ra.user_id, u.user_name
-                           ORDER BY alert_count DESC LIMIT 5""")
-                    rows = cur.fetchall()
-                    result["top_risky_users"] = [
-                        {"user_id": r[0], "user_name": r[1], "alert_count": r[2]}
-                        for r in rows
-                    ]
-                except pymysql.Error:
-                    result["top_risky_users"] = []
-
-                # 告警类型分布
-                cur.execute(
-                    "SELECT alert_type, COUNT(*) as cnt FROM risk_alerts GROUP BY alert_type ORDER BY cnt DESC")
-                result["alert_stats"] = [
-                    {"alert_type": r[0], "count": r[1]} for r in cur.fetchall()
-                ]
-
-                # 省份告警统计
-                cur.execute(
-                    """SELECT u.province, COUNT(*) as alert_count
-                       FROM risk_alerts ra JOIN ecommerce.users u ON ra.user_id = u.user_id
-                       WHERE u.province IS NOT NULL
-                       GROUP BY u.province""")
-                result["region_alerts"] = [
-                    {"province": r[0], "alert_count": r[1]} for r in cur.fetchall()
-                ]
+                result["top_risky_users"] = _query_top_risky_users(cur, 5)
+                result["alert_stats"] = _query_alert_type_distribution(cur)
+                result["region_alerts"] = _query_region_alerts(cur)
         finally:
             conn.close()
-
-        # 风险评分（从 Kafka 缓存）
-        with risk_score_lock:
-            items = list(risk_score_cache.items())
-        items.sort(key=lambda x: x[1], reverse=True)
-        top_scores = items[:10]
-        if top_scores:
-            conn_ecom = pymysql.connect(**ecom_config)
-            try:
-                with conn_ecom.cursor() as cur:
-                    placeholders = ",".join(["%s"] * len(top_scores))
-                    cur.execute(
-                        f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
-                        [t[0] for t in top_scores],
-                    )
-                    name_map = {r[0]: r[1] for r in cur.fetchall()}
-            finally:
-                conn_ecom.close()
-        else:
-            name_map = {}
-        result["risk_scores"] = [
-            {"user_id": uid, "user_name": name_map.get(uid, uid[-8:] if len(uid) > 8 else uid),
-             "risk_score": round(score, 4)}
-            for uid, score in top_scores
-        ]
+        result["risk_scores"] = _query_risk_scores(10)
         return result
     except Exception as e:
         return {"error": str(e)}
