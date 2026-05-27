@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>电商交易风险监控大屏</title>
-    <link rel="stylesheet" href="/static/style.css?v=6">
+    <link rel="stylesheet" href="/static/style.css?v=7">
     <script src="/static/echarts.min.js?v=1"></script>
 </head>
 <body>
@@ -32,17 +32,9 @@
             </div>
         </div>
 
-        <!-- 用户风险评分榜 Top 10-->
+        <!-- 用户风险评分榜 Top 10 全宽 -->
         <div class="chart-panel">
-            <div class="risk-score-row">
-                <div id="riskScoreChart" class="chart-risk-score"></div>
-                <div class="top-users-side">
-                    <h3 class="section-title">&#127942; Top 5</h3>
-                    <div class="top-users-list" id="topUsersList">
-                        <span class="placeholder">等待数据...</span>
-                    </div>
-                </div>
-            </div>
+            <div id="riskScoreChart" class="chart-risk-score"></div>
         </div>
 
         <!-- 饼图 + 趋势图 -->
@@ -55,7 +47,7 @@
             </div>
         </div>
 
-        <!-- 中国地图热力图 带切换 -->
+        <!-- 中国地图热力图 -->
         <div class="chart-panel">
             <div class="map-toolbar">
                 <div class="map-toggle">
@@ -66,15 +58,23 @@
             <div id="chinaMap" class="chart-map"></div>
         </div>
 
-        <!-- 仪表盘 2×3 -->
-        <div class="chart-panel">
-            <div class="gauge-grid">
-                <div id="gaugeLarge" class="gauge-item"></div>
-                <div id="gaugeFreq" class="gauge-item"></div>
-                <div id="gaugeIncrease" class="gauge-item"></div>
-                <div id="gaugeFailed" class="gauge-item"></div>
-                <div id="gaugeIp" class="gauge-item"></div>
-                <div id="gaugeTotal" class="gauge-item"></div>
+        <!-- 仪表盘 2×3 + Top5 -->
+        <div class="charts-row">
+            <div class="chart-panel">
+                <div class="gauge-grid">
+                    <div id="gaugeTotal" class="gauge-item"></div>
+                    <div id="gaugeLarge" class="gauge-item"></div>
+                    <div id="gaugeFreq" class="gauge-item"></div>
+                    <div id="gaugeIncrease" class="gauge-item"></div>
+                    <div id="gaugeFailed" class="gauge-item"></div>
+                    <div id="gaugeIp" class="gauge-item"></div>
+                </div>
+            </div>
+            <div class="chart-panel">
+                <h3 class="section-title">&#127942; 风险用户排行 Top 5</h3>
+                <div class="top-users-list" id="topUsersList">
+                    <span class="placeholder">等待数据...</span>
+                </div>
             </div>
         </div>
 
@@ -114,6 +114,6 @@
             </div>
         </div>
     </div>
-    <script src="/static/app.js?v=6"></script>
+    <script src="/static/app.js?v=7"></script>
 </body>
 </html>

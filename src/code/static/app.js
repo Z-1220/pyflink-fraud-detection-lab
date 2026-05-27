@@ -37,18 +37,20 @@ const GAUGE_CONFIG = {
 // 初始化所有仪表盘为空
 Object.keys(gaugeCharts).forEach(key => {
     const cfg = GAUGE_CONFIG[key];
+    const isTotal = key === 'TOTAL';
     gaugeCharts[key].setOption({
         series: [{
             type: 'gauge', startAngle: 210, endAngle: -30,
-            center: ['50%', '60%'], radius: '80%',
+            center: ['50%', '62%'], radius: '75%',
             min: 0, max: 100,
-            axisLine: { show: true, lineStyle: { width: 8, color: [[1, 'rgba(255,255,255,0.10)']] } },
+            axisLine: { show: true, lineStyle: { width: 6, color: [[1, 'rgba(255,255,255,0.10)']] } },
             axisTick: { show: false },
             splitLine: { show: false },
             axisLabel: { show: false },
-            detail: { offsetCenter: [0, 30], valueAnimation: true,
-                      formatter: '{value}%', fontSize: 17, color: cfg.color },
-            title: { offsetCenter: [0, '85%'], fontSize: 13, color: cfg.color },
+            detail: { offsetCenter: [0, 28], valueAnimation: true,
+                      formatter: isTotal ? '{value}%' : '{value}%',
+                      fontSize: 15, color: cfg.color },
+            title: { offsetCenter: [0, '88%'], fontSize: 12, color: cfg.color },
             data: [{ value: 0, name: cfg.name }]
         }]
     });
@@ -85,11 +87,28 @@ ws.onmessage = (event) => {
 };
 
 /* ========== 指标卡 ========== */
+function updateTotalGauge() {
+    const ratio = totalCount > 0 ? Math.min(Math.round(alarmCount / totalCount * 100), 100) : 0;
+    const cfg = GAUGE_CONFIG.TOTAL;
+    gaugeCharts.TOTAL.setOption({
+        series: [{
+            axisLine: { lineStyle: { width: 6, color: [
+                [ratio / 100, cfg.color],
+                [1, 'rgba(255,255,255,0.10)']
+            ] } },
+            detail: { formatter: '{value}%', color: cfg.color },
+            title: { color: cfg.color },
+            data: [{ value: ratio, name: '告警占比' }]
+        }]
+    });
+}
+
 function updateTotals(data) {
     totalAmount = data.total_amount || 0;
     totalCount = data.transaction_count || 0;
     document.getElementById('totalAmount').innerText = totalAmount.toFixed(2);
     document.getElementById('totalCount').innerText = totalCount;
+    updateTotalGauge();
 }
 
 function updateTrend(data) {
@@ -124,6 +143,7 @@ function addAlarm(data) {
         document.getElementById('filterCount').innerText = alarmList.length + ' 条';
         renderAlarmTable(alarmList);
     }
+    updateTotalGauge();
 }
 
 /* ========== 筛选 ========== */
@@ -212,7 +232,7 @@ function renderRiskScoreChart(data) {
                    formatter: v => v.toFixed(2) },
                  splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
         yAxis: { type: 'category', data: names,
-                 axisLabel: { color: '#D6E4F0', fontSize: 14 },
+                 axisLabel: { color: '#D6E4F0', fontSize: 14, rotate: 45 },
                  axisLine: { lineStyle: { color: 'rgba(255,255,255,0.10)' } } },
         series: [{
             type: 'bar',
@@ -268,19 +288,18 @@ function renderGauges(byType) {
             }]
         });
     });
-    // 总告警数仪表盘
+    // 总告警占比仪表盘（告警总数 / 交易总数）
+    const ratio = totalCount > 0 ? Math.min(Math.round(total / totalCount * 100), 100) : 0;
     const cfgTotal = GAUGE_CONFIG.TOTAL;
-    const totalMax = Math.max(total * 1.5, 10);
     gaugeCharts.TOTAL.setOption({
         series: [{
-            min: 0, max: totalMax,
-            axisLine: { lineStyle: { width: 8, color: [
-                [total / totalMax, cfgTotal.color],
+            axisLine: { lineStyle: { width: 6, color: [
+                [ratio / 100, cfgTotal.color],
                 [1, 'rgba(255,255,255,0.10)']
             ] } },
-            detail: { formatter: '{value}', color: cfgTotal.color },
+            detail: { formatter: '{value}%', color: cfgTotal.color },
             title: { color: cfgTotal.color },
-            data: [{ value: total, name: cfgTotal.name }]
+            data: [{ value: ratio, name: '告警占比' }]
         }]
     });
 }

@@ -37,17 +37,14 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 .chart { width: 100%; height: 240px; }
 
 /* ---- 风险评分榜 ---- */
-.risk-score-row { display: flex; gap: 16px; }
-.chart-risk-score { flex: 1.5; height: 220px; }
-.top-users-side { flex: 1; display: flex; flex-direction: column; }
+.chart-risk-score { width: 100%; height: 250px; }
 
 /* ---- 中国地图 ---- */
-.chart-map { width: 100%; height: 550px; }
+.chart-map { width: 100%; height: 650px; }
 .map-toolbar {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 4px;
+    display: flex; align-items: center; justify-content: flex-end;
+    margin-bottom: 2px;
 }
-.map-title { font-size: 15px; color: #D6E4F0; }
 .map-toggle { display: flex; gap: 0; }
 .toggle-btn {
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10);
@@ -65,10 +62,10 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 /* ---- 仪表盘 2×3 ---- */
 .gauge-grid {
     display: grid; grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(2, 200px);
-    gap: 8px; width: 100%;
+    grid-template-rows: repeat(2, 160px);
+    gap: 6px; width: 100%;
 }
-.gauge-item { height: 200px; min-width: 0; }
+.gauge-item { height: 160px; min-width: 0; }
 
 /* ---- 风险用户排行 ---- */
 .section-title { font-size: 16px; color: #8AA4C0; margin-bottom: 10px; }
