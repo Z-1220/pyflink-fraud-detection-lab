@@ -22,14 +22,16 @@ const gaugeCharts = {
     CONTINUOUS_INCREASE:  echarts.init(document.getElementById('gaugeIncrease')),
     FAILED_SURGE:         echarts.init(document.getElementById('gaugeFailed')),
     IP_SHARING:           echarts.init(document.getElementById('gaugeIp')),
+    TOTAL:                echarts.init(document.getElementById('gaugeTotal')),
 };
 
 const GAUGE_CONFIG = {
-    LARGE_AMOUNT:        { name: '大额', color: '#D45252' },
-    HIGH_FREQUENCY:       { name: '高频', color: '#E88A3A' },
-    CONTINUOUS_INCREASE:  { name: '递增', color: '#D4A037' },
-    FAILED_SURGE:         { name: '失败', color: '#C04878' },
+    LARGE_AMOUNT:        { name: '大额',   color: '#D45252' },
+    HIGH_FREQUENCY:       { name: '高频',   color: '#E88A3A' },
+    CONTINUOUS_INCREASE:  { name: '递增',   color: '#D4A037' },
+    FAILED_SURGE:         { name: '失败',   color: '#C04878' },
     IP_SHARING:           { name: 'IP共用', color: '#3A8AE8' },
+    TOTAL:                { name: '总告警', color: '#D6E4F0' },
 };
 
 // 初始化所有仪表盘为空
@@ -265,6 +267,21 @@ function renderGauges(byType) {
                 data: [{ value: pct, name: cfg.name + ' ' + item.count }]
             }]
         });
+    });
+    // 总告警数仪表盘
+    const cfgTotal = GAUGE_CONFIG.TOTAL;
+    const totalMax = Math.max(total * 1.5, 10);
+    gaugeCharts.TOTAL.setOption({
+        series: [{
+            min: 0, max: totalMax,
+            axisLine: { lineStyle: { width: 8, color: [
+                [total / totalMax, cfgTotal.color],
+                [1, 'rgba(255,255,255,0.10)']
+            ] } },
+            detail: { formatter: '{value}', color: cfgTotal.color },
+            title: { color: cfgTotal.color },
+            data: [{ value: total, name: cfgTotal.name }]
+        }]
     });
 }
 
