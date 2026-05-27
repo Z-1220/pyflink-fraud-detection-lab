@@ -44,9 +44,9 @@ Object.keys(gaugeCharts).forEach(key => {
             axisTick: { show: false },
             splitLine: { show: false },
             axisLabel: { show: false },
-            detail: { offsetCenter: [0, 28], valueAnimation: true,
-                      formatter: '{value}%', fontSize: 14, color: cfg.color },
-            title: { offsetCenter: [0, '85%'], fontSize: 11, color: cfg.color },
+            detail: { offsetCenter: [0, 30], valueAnimation: true,
+                      formatter: '{value}%', fontSize: 17, color: cfg.color },
+            title: { offsetCenter: [0, '85%'], fontSize: 13, color: cfg.color },
             data: [{ value: 0, name: cfg.name }]
         }]
     });
@@ -199,14 +199,15 @@ function renderRiskScoreChart(data) {
     const scores = data.map(d => d.risk_score).reverse();
     riskScoreChart.setOption({
         title: { text: '用户风险评分榜 Top 10', left: 'center', top: 4,
-                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        grid: { top: 36, right: 60, left: 100, bottom: 10 },
-        xAxis: { type: 'value', name: '风险分', nameTextStyle: { color: '#8AA4C0' },
-                 axisLabel: { color: '#8AA4C0' },
+        grid: { top: 36, right: 60, left: 130, bottom: 10 },
+        xAxis: { type: 'value', name: '风险分',
+                 nameTextStyle: { color: '#8AA4C0', fontSize: 13 },
+                 axisLabel: { color: '#8AA4C0', fontSize: 13 },
                  splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
         yAxis: { type: 'category', data: names,
-                 axisLabel: { color: '#D6E4F0', fontSize: 11 },
+                 axisLabel: { color: '#D6E4F0', fontSize: 14 },
                  axisLine: { lineStyle: { color: 'rgba(255,255,255,0.10)' } } },
         series: [{
             type: 'bar',
@@ -223,7 +224,7 @@ function renderRiskScoreChart(data) {
                     }
                 };
             }),
-            label: { show: true, position: 'right', color: '#8AA4C0', fontSize: 11 }
+            label: { show: true, position: 'right', color: '#8AA4C0', fontSize: 14 }
         }]
     });
 }
@@ -317,7 +318,7 @@ function renderChinaMap() {
     chinaMapChart.setOption({
         title: { text: isAmount ? '省份交易热力图' : '省份风险告警分布',
                  left: 'center', top: 0,
-                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
         tooltip: {
             trigger: 'item',
             formatter: p => p.name
@@ -341,7 +342,7 @@ function renderChinaMap() {
                 borderWidth: 0.5
             },
             emphasis: {
-                label: { show: true, color: '#D6E4F0', fontSize: 12 },
+                label: { show: true, color: '#D6E4F0', fontSize: 14 },
                 itemStyle: { areaColor: '#2A5A8C' }
             }
         },
@@ -398,12 +399,12 @@ function renderCategoryChart() {
         color: ['#D45252','#D4A037','#3CAB6E','#3A8AE8','#E88A3A',
                 '#7C6BC4','#D4808A','#48B8B0','#CC8A5C','#7A9CC0'],
         title: { text: '商品类别交易分布', left: 'center', top: 0,
-                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
         tooltip: { trigger: 'item' },
         series: [{
             type: 'pie', radius: ['35%', '65%'], center: ['50%', '55%'],
-            data, label: { color: '#8AA4C0', fontSize: 10, formatter: '{b}' },
-            emphasis: { label: { fontSize: 14 } }
+            data, label: { color: '#8AA4C0', fontSize: 12, formatter: '{b}' },
+            emphasis: { label: { fontSize: 16 } }
         }]
     });
 }
@@ -411,12 +412,12 @@ function renderCategoryChart() {
 function renderTrendChart() {
     trendChart.setOption({
         title: { text: '近5分钟窗口趋势', left: 'center',
-                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
         tooltip: { trigger: 'axis' },
-        legend: { data: ['金额', '笔数'], textStyle: { color: '#8AA4C0' }, top: 22 },
-        grid: { top: 60, right: 50, left: 60, bottom: 30 },
+        legend: { data: ['金额', '笔数'], textStyle: { color: '#8AA4C0', fontSize: 13 }, top: 24 },
+        grid: { top: 60, right: 50, left: 70, bottom: 30 },
         xAxis: { type: 'category', data: trendData.map(d => d.time),
-                 axisLabel: { color: '#8AA4C0', fontSize: 10 } },
+                 axisLabel: { color: '#8AA4C0', fontSize: 12 } },
         yAxis: [
             { type: 'value', name: '金额(¥)', nameTextStyle: { color: '#8AA4C0' },
               axisLabel: { color: '#8AA4C0',
