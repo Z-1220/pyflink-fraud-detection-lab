@@ -68,8 +68,11 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 .gauge-item { flex: 1; height: 240px; min-width: 0; }
 
 /* ---- 风险用户排行 ---- */
-.section-title { font-size: 16px; color: #8AA4C0; margin-bottom: 8px; }
-.top-users-list { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.section-title { font-size: 16px; color: #8AA4C0; margin-bottom: 10px; }
+.top-users-list {
+    display: flex; flex-direction: column; gap: 10px;
+    align-items: stretch;
+}
 .placeholder { color: #5A7A96; font-size: 15px; }
 
 .user-rank-item {

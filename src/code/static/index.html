@@ -32,9 +32,17 @@
             </div>
         </div>
 
-        <!-- 风险评分榜 Top 10 -->
-        <div class="chart-panel" id="riskScorePanel">
-            <div id="riskScoreChart" class="chart-risk-score"></div>
+        <!-- 风险评分榜 + 风险用户排行 -->
+        <div class="charts-row">
+            <div class="chart-panel">
+                <div id="riskScoreChart" class="chart-risk-score"></div>
+            </div>
+            <div class="chart-panel">
+                <h3 class="section-title">&#127942; 风险用户排行 Top 5</h3>
+                <div class="top-users-list" id="topUsersList">
+                    <span class="placeholder">等待数据...</span>
+                </div>
+            </div>
         </div>
 
         <!-- 饼图 + 趋势图 -->
@@ -58,22 +66,14 @@
             <div id="chinaMap" class="chart-map"></div>
         </div>
 
-        <!-- 仪表盘 + 风险用户排行 -->
-        <div class="charts-row">
-            <div class="chart-panel">
-                <div id="gaugeDashboard" class="chart-gauge-row">
-                    <div id="gaugeLarge" class="gauge-item"></div>
-                    <div id="gaugeFreq" class="gauge-item"></div>
-                    <div id="gaugeIncrease" class="gauge-item"></div>
-                    <div id="gaugeFailed" class="gauge-item"></div>
-                    <div id="gaugeIp" class="gauge-item"></div>
-                </div>
-            </div>
-            <div class="chart-panel">
-                <h3 class="section-title">&#127942; 风险用户排行 Top 5</h3>
-                <div class="top-users-list" id="topUsersList">
-                    <span class="placeholder">等待数据...</span>
-                </div>
+        <!-- 告警类型仪表盘 -->
+        <div class="chart-panel">
+            <div id="gaugeDashboard" class="chart-gauge-row">
+                <div id="gaugeLarge" class="gauge-item"></div>
+                <div id="gaugeFreq" class="gauge-item"></div>
+                <div id="gaugeIncrease" class="gauge-item"></div>
+                <div id="gaugeFailed" class="gauge-item"></div>
+                <div id="gaugeIp" class="gauge-item"></div>
             </div>
         </div>
 
