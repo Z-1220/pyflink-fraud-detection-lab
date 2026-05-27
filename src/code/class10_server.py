@@ -333,35 +333,147 @@ def get_region_alert_stats():
 
 @app.get("/api/user-risk-scores")
 def get_user_risk_scores(limit: int = 10):
-    """返回按加权风险分排名的用户列表
-    权重：LARGE_AMOUNT=5, HIGH_FREQUENCY=3, CONTINUOUS_INCREASE=2, FAILED_SURGE=4, IP_SHARING=4
+    """时间衰减TOPSIS风险评分
+    5项指标按指数衰减累计 → 向量归一化 → 加权 → 正负理想解 → 贴近度
+    λ = ln(2)/180000,  T_half=3min=180,000ms
     """
+    import math
+    import time as _time
+
     ads_config = MYSQL_CONFIG.copy()
     ads_config["database"] = "ads_ecommerce"
+    LAMBDA = math.log(2) / 180_000.0           # 衰减系数 per ms
+    WEIGHTS = [0.25, 0.20, 0.25, 0.15, 0.15]   # C1大额 C2高频 C3失败率 C4IP共用 C5递增
+
     try:
         conn = pymysql.connect(**ads_config)
+        now_ms = _time.time() * 1000.0
+
+        # ---- 1. 拉取告警记录（排除 GLOBAL）----
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT ra.user_id, u.user_name,
-                          SUM(CASE WHEN ra.alert_type = 'LARGE_AMOUNT' THEN 5
-                                   WHEN ra.alert_type = 'HIGH_FREQUENCY' THEN 3
-                                   WHEN ra.alert_type = 'CONTINUOUS_INCREASE' THEN 2
-                                   WHEN ra.alert_type = 'FAILED_SURGE' THEN 4
-                                   WHEN ra.alert_type = 'IP_SHARING' THEN 4
-                                   ELSE 1 END) as risk_score
-                   FROM risk_alerts ra
-                   JOIN ecommerce.users u ON ra.user_id = u.user_id
-                   GROUP BY ra.user_id, u.user_name
-                   ORDER BY risk_score DESC
-                   LIMIT %s""",
-                (limit,),
+                """SELECT user_id, alert_type, alert_time
+                   FROM risk_alerts
+                   WHERE user_id != 'GLOBAL'
+                     AND alert_time >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)"""
             )
-            rows = cur.fetchall()
+            alert_rows = cur.fetchall()
+
+            # ---- 2. 拉取各用户最近5分钟失败率 ----
+            cur.execute(
+                """SELECT user_id,
+                          SUM(CASE WHEN result='failed' THEN 1 ELSE 0 END) as fc,
+                          COUNT(*) as tc
+                   FROM ecommerce.transactions
+                   WHERE event_time >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                   GROUP BY user_id"""
+            )
+            fail_rows = cur.fetchall()
         conn.close()
+
+        # ---- 3. 按用户计算5项时间衰减指标 ----
+        TYPE_TO_IDX = {
+            "LARGE_AMOUNT": 0,
+            "HIGH_FREQUENCY": 1,
+            "CONTINUOUS_INCREASE": 3,
+            "IP_SHARING": 4,
+        }
+        user_scores = {}  # user_id → [S1, S2, S3, S4, S5]
+
+        for row in alert_rows:
+            uid, atype, atime = row
+            idx = TYPE_TO_IDX.get(atype)
+            if idx is None:
+                continue
+            dt_ms = now_ms - atime.timestamp() * 1000.0
+            if dt_ms < 0:
+                dt_ms = 0
+            decay = math.exp(-LAMBDA * dt_ms)
+            if uid not in user_scores:
+                user_scores[uid] = [0.0, 0.0, 0.0, 0.0, 0.0]
+            user_scores[uid][idx] += decay
+
+        # C3 失败率
+        for uid, fc, tc in fail_rows:
+            if tc > 0:
+                fail_rate = fc / tc
+            else:
+                fail_rate = 0.0
+            if uid not in user_scores:
+                user_scores[uid] = [0.0, 0.0, 0.0, 0.0, 0.0]
+            user_scores[uid][2] = fail_rate
+
+        if not user_scores:
+            return []
+
+        # ---- 4. TOPSIS ----
+        uids = list(user_scores.keys())
+        n = len(uids)
+        m = 5
+        X = [user_scores[uid] for uid in uids]  # n×5 matrix
+
+        # 向量归一化
+        col_sqsum = [0.0] * m
+        for i in range(n):
+            for j in range(m):
+                col_sqsum[j] += X[i][j] ** 2
+        col_norm = [math.sqrt(s) if s > 0 else 1.0 for s in col_sqsum]
+
+        R = [[0.0]*m for _ in range(n)]  # normalized
+        for i in range(n):
+            for j in range(m):
+                R[i][j] = X[i][j] / col_norm[j]
+
+        # 加权
+        V = [[0.0]*m for _ in range(n)]
+        for i in range(n):
+            for j in range(m):
+                V[i][j] = R[i][j] * WEIGHTS[j]
+
+        # 正/负理想解
+        A_plus = [max(V[i][j] for i in range(n)) for j in range(m)]
+        A_minus = [min(V[i][j] for i in range(n)) for j in range(m)]
+
+        # 距离
+        D_plus = [0.0] * n
+        D_minus = [0.0] * n
+        for i in range(n):
+            dp = dm = 0.0
+            for j in range(m):
+                dp += (V[i][j] - A_plus[j]) ** 2
+                dm += (V[i][j] - A_minus[j]) ** 2
+            D_plus[i] = math.sqrt(dp)
+            D_minus[i] = math.sqrt(dm)
+
+        # 贴近度
+        scores = []
+        for i in range(n):
+            denom = D_plus[i] + D_minus[i]
+            closeness = D_minus[i] / denom if denom > 0 else 0.0
+            scores.append((uids[i], round(closeness, 4)))
+
+        scores.sort(key=lambda x: x[1], reverse=True)
+        top = scores[:limit]
+
+        # ---- 5. 获取用户名称 ----
+        ecom_config = MYSQL_CONFIG.copy()
+        ecom_config["database"] = "ecommerce"
+        conn2 = pymysql.connect(**ecom_config)
+        with conn2.cursor() as cur:
+            placeholders = ",".join(["%s"] * len(top))
+            uid_list = [t[0] for t in top]
+            cur.execute(
+                f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
+                uid_list,
+            )
+            name_map = {r[0]: r[1] for r in cur.fetchall()}
+        conn2.close()
+
         return [
-            {"user_id": r[0], "user_name": r[1], "risk_score": int(r[2])}
-            for r in rows
+            {"user_id": t[0], "user_name": name_map.get(t[0], t[0]), "risk_score": t[1]}
+            for t in top
         ]
+
     except Exception as e:
         return {"error": str(e)}
 

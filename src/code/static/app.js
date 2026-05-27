@@ -200,11 +200,14 @@ function renderRiskScoreChart(data) {
     riskScoreChart.setOption({
         title: { text: '用户风险评分榜 Top 10', left: 'center', top: 4,
                  textStyle: { color: '#D6E4F0', fontSize: 18 } },
-        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
+                   valueFormatter: v => (typeof v === 'number') ? v.toFixed(4) : v },
         grid: { top: 40, right: 60, left: 150, bottom: 20 },
-        xAxis: { type: 'value', name: '风险分',
+        xAxis: { type: 'value', name: '贴近度',
+                 min: 0, max: 1,
                  nameTextStyle: { color: '#8AA4C0', fontSize: 13 },
-                 axisLabel: { color: '#8AA4C0', fontSize: 13 },
+                 axisLabel: { color: '#8AA4C0', fontSize: 13,
+                   formatter: v => v.toFixed(2) },
                  splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
         yAxis: { type: 'category', data: names,
                  axisLabel: { color: '#D6E4F0', fontSize: 14 },
@@ -224,7 +227,8 @@ function renderRiskScoreChart(data) {
                     }
                 };
             }),
-            label: { show: true, position: 'right', color: '#8AA4C0', fontSize: 14 }
+            label: { show: true, position: 'right', color: '#8AA4C0', fontSize: 14,
+                     formatter: p => p.value.toFixed(3) },
         }]
     });
 }
