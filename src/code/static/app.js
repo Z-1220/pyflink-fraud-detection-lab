@@ -49,8 +49,8 @@ Object.keys(gaugeCharts).forEach(key => {
             axisLabel: { show: false },
             detail: { offsetCenter: [0, 20], valueAnimation: true,
                       formatter: '{value}%',
-                      fontSize: 13, color: cfg.color },
-            title: { offsetCenter: [0, '92%'], fontSize: 10, color: cfg.color },
+                      fontSize: 16, color: cfg.color },
+            title: { offsetCenter: [0, '92%'], fontSize: 13, color: cfg.color },
             data: [{ value: 0, name: cfg.name }]
         }]
     });
@@ -275,7 +275,7 @@ function renderGauges(byType) {
         const chart = gaugeCharts[item.alert_type];
         if (!chart) return;
         const cfg = GAUGE_CONFIG[item.alert_type];
-        const pct = Math.round(item.count / total * 100);
+        const pct = item.count > 0 ? Math.max(1, Math.ceil(item.count / total * 100)) : 0;
         chart.setOption({
             series: [{
                 axisLine: { lineStyle: { width: 8, color: [
@@ -289,7 +289,7 @@ function renderGauges(byType) {
         });
     });
     // 总告警占比仪表盘（告警总数 / 交易总数）
-    const ratio = totalCount > 0 ? Math.min(Math.round(total / totalCount * 100), 100) : 0;
+    const ratio = totalCount > 0 ? Math.min(Math.max(1, Math.ceil(total / totalCount * 100)), 100) : 0;
     const cfgTotal = GAUGE_CONFIG.TOTAL;
     gaugeCharts.TOTAL.setOption({
         series: [{
