@@ -265,10 +265,22 @@ let chinaGeoLoaded = false;
 
 async function loadChinaGeo() {
     try {
-        const resp = await fetch('/static/china.json?v=1');
-        const geo = await resp.json();
+        const [geoResp, regionResp] = await Promise.all([
+            fetch('/static/china.json?v=1'),
+            fetch('/api/region-stats')
+        ]);
+        const geo = await geoResp.json();
         echarts.registerMap('china', geo);
         chinaGeoLoaded = true;
+        // 加载初始省份数据
+        const regions = await regionResp.json();
+        if (Array.isArray(regions)) {
+            regions.forEach(r => {
+                if (r.province) {
+                    regionMap.set(r.province, { amount: r.total_amount, count: r.transaction_count });
+                }
+            });
+        }
         renderChinaMap();
     } catch (e) {
         console.error('加载中国地图失败', e);
