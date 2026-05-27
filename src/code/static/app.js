@@ -519,14 +519,6 @@ fetchRiskScores();
 fetchAlertStats();
 loadChinaGeo();
 
-// 实时时钟
-function updateClock() {
-    const now = new Date();
-    document.getElementById('liveClock').innerText = now.toLocaleTimeString('zh-CN', { hour12: false });
-}
-updateClock();
-setInterval(updateClock, 1000);
-
 // 定时轮询
 setInterval(fetchTopRiskyUsers, 15000);
 setInterval(fetchRiskScores, 15000);
