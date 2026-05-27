@@ -12,6 +12,7 @@ import pymysql
 import uuid
 import random
 from faker import Faker
+from config_loader import MYSQL_CONFIG
 
 # ==================== 中国省份城市映射 ====================
 # 31个省级行政区，每个省份下若干主要城市（用于模拟用户地理分布）
@@ -85,17 +86,8 @@ PROVINCE_WEIGHTS = [
 ]
 
 # ==================== 数据库连接配置 ====================
-DB_CONFIG_BASE = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "123456",
-    "charset": "utf8mb4",
-}
-
-# 两个数据库的完整配置
-DB_ECOM = {**DB_CONFIG_BASE, "database": "ecommerce"}
-DB_ADS  = {**DB_CONFIG_BASE, "database": "ads_ecommerce"}
+DB_ECOM = {**MYSQL_CONFIG, "database": "ecommerce"}
+DB_ADS  = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
 
 # ==================== ecommerce 库的表定义 ====================
 ECOM_TABLES_SQL = [
@@ -194,7 +186,7 @@ TRUNCATE_ORDER_ADS  = ["risk_alerts", "transaction_stats"]
 
 def create_databases_if_not_exists():
     """创建两个数据库（如果不存在）"""
-    conn = pymysql.connect(**DB_CONFIG_BASE)
+    conn = pymysql.connect(**MYSQL_CONFIG)
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE DATABASE IF NOT EXISTS ecommerce")

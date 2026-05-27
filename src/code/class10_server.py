@@ -8,6 +8,7 @@
 
 import json
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from threading import Lock, Thread
@@ -16,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from kafka import KafkaConsumer
 import pymysql
+from config_loader import MYSQL_CONFIG
 
 # ==================== 配置 ====================
 KAFKA_BOOTSTRAP = "localhost:9092"
@@ -24,20 +26,12 @@ TOPICS = [
     "total_amount_and_count_events",
     "window_count_and_amount_events",
     "category_aggregated_events",
-    "product_aggregated_events",
     "region_aggregated_events",
     "user_risk_scores",
 ]
 GROUP_ID = "websocket-server"
 
-MYSQL_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "123456",
-    "database": "ecommerce",
-    "charset": "utf8mb4",
-}
+ECOM_MYSQL_CONFIG = {**MYSQL_CONFIG, "database": "ecommerce"}
 
 # ==================== 全局变量 ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +39,12 @@ static_dir = os.path.join(BASE_DIR, "static")
 os.makedirs(static_dir, exist_ok=True)
 
 clients: set[WebSocket] = set()
+
+# 累计状态（刷新不丢失）
+server_total_amount = 0.0
+server_total_count = 0
+server_alarm_count = 0
+server_total_lock = Lock()
 
 # 内存缓存：省份聚合数据 + 用户风险评分（由 Kafka 消费者线程更新）
 region_cache: dict[str, dict] = {}
@@ -78,12 +78,20 @@ def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
                 auto_offset_reset="latest",
                 enable_auto_commit=True,
             )
-            print(f"📡 Kafka 消费者启动，监听主题: {TOPICS}")
+            logging.info("Kafka 消费者启动，监听 %d 个主题", len(TOPICS))
             for msg in consumer:
                 payload = {"topic": msg.topic, "data": msg.value}
                 asyncio.run_coroutine_threadsafe(broadcast(json.dumps(payload)), loop)
+                # 累计状态追踪
+                if msg.topic == "total_amount_and_count_events":
+                    with server_total_lock:
+                        server_total_amount = msg.value.get("total_amount", 0)
+                        server_total_count = msg.value.get("transaction_count", 0)
+                elif msg.topic == "alarm_events":
+                    with server_total_lock:
+                        server_alarm_count += 1
                 # 缓存省份聚合数据
-                if msg.topic == "region_aggregated_events":
+                elif msg.topic == "region_aggregated_events":
                     data = msg.value
                     prov = data.get("province", "")
                     with region_cache_lock:
@@ -102,7 +110,7 @@ def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
                         with risk_score_lock:
                             risk_score_cache[uid] = score
         except Exception as e:
-            print(f"⚠️ Kafka 消费者异常，5秒后重连: {e}")
+            logging.warning("Kafka 消费者异常，5秒后重连: %s", e)
             try:
                 consumer.close()
             except Exception:
@@ -115,10 +123,10 @@ async def lifespan(_app: FastAPI):
     # startup
     loop = asyncio.get_running_loop()
     Thread(target=kafka_consumer_thread, args=(loop,), daemon=True).start()
-    print("✅ WebSocket 服务已就绪")
+    logging.info("WebSocket 服务已就绪")
     yield
     # shutdown
-    print("🛑 服务正在关闭")
+    logging.info("服务正在关闭")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -131,12 +139,25 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     clients.add(websocket)
-    print(f"🔗 新客户端连接，当前连接数: {len(clients)}")
+    logging.info("新客户端连接，当前连接数: %d", len(clients))
+    # 发送状态快照，保证刷新后数据不丢失
+    with server_total_lock:
+        snapshot = {
+            "total_amount": server_total_amount,
+            "total_count": server_total_count,
+            "alarm_count": server_alarm_count,
+        }
+    with region_cache_lock:
+        snapshot["region_map"] = dict(region_cache)
+    try:
+        await websocket.send_text(json.dumps({"topic": "snapshot", "data": snapshot}))
+    except Exception:
+        pass
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        print(f"❌ 客户端断开，当前连接数: {len(clients) - 1}")
+        logging.info("客户端断开，当前连接数: %d", len(clients) - 1)
     finally:
         clients.discard(websocket)
 
@@ -146,7 +167,7 @@ async def websocket_endpoint(websocket: WebSocket):
 def get_categories():
     """返回商品类别列表"""
     try:
-        conn = pymysql.connect(**MYSQL_CONFIG)
+        conn = pymysql.connect(**ECOM_MYSQL_CONFIG)
         with conn.cursor() as cur:
             cur.execute("SELECT category, description FROM categories")
             rows = cur.fetchall()
@@ -159,8 +180,7 @@ def get_categories():
 @app.get("/api/stats/history")
 def get_history_stats(window_start: str = None, window_end: str = None):
     """查询历史窗口统计（ADS 库）"""
-    ads_config = MYSQL_CONFIG.copy()
-    ads_config["database"] = "ads_ecommerce"
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
@@ -196,8 +216,7 @@ def get_history_stats(window_start: str = None, window_end: str = None):
 @app.get("/api/alerts/history")
 def get_alert_history(alert_type: str = None, keyword: str = None, limit: int = 500):
     """查询历史告警记录（ADS 库），支持类型和关键词筛选"""
-    ads_config = MYSQL_CONFIG.copy()
-    ads_config["database"] = "ads_ecommerce"
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
@@ -236,8 +255,7 @@ def get_alert_history(alert_type: str = None, keyword: str = None, limit: int = 
 @app.get("/api/top-risky-users")
 def get_top_risky_users(limit: int = 5):
     """返回告警次数最多的用户排名（跨库 JOIN，fallback 分步查询）"""
-    ads_config = MYSQL_CONFIG.copy()
-    ads_config["database"] = "ads_ecommerce"
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
@@ -296,8 +314,7 @@ def get_top_risky_users(limit: int = 5):
 @app.get("/api/alerts/stats")
 def get_alert_stats():
     """返回告警类型分布和近24小时按小时统计"""
-    ads_config = MYSQL_CONFIG.copy()
-    ads_config["database"] = "ads_ecommerce"
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
@@ -333,8 +350,7 @@ def get_region_stats():
 @app.get("/api/region-alert-stats")
 def get_region_alert_stats():
     """返回各省份风险告警数量（JOIN risk_alerts + users）"""
-    ads_config = MYSQL_CONFIG.copy()
-    ads_config["database"] = "ads_ecommerce"
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
@@ -362,8 +378,7 @@ def get_user_risk_scores(limit: int = 10):
     items.sort(key=lambda x: x[1], reverse=True)
     top = items[:limit]
 
-    ecom_config = MYSQL_CONFIG.copy()
-    ecom_config["database"] = "ecommerce"
+    ecom_config = {**MYSQL_CONFIG, "database": "ecommerce"}
     try:
         conn = pymysql.connect(**ecom_config)
         with conn.cursor() as cur:
@@ -388,8 +403,7 @@ def get_user_risk_scores(limit: int = 10):
 def export_alerts(alert_type: str = None, keyword: str = None):
     """导出告警数据为CSV"""
     from fastapi.responses import Response as FastResponse
-    ads_config = MYSQL_CONFIG.copy()
-    ads_config["database"] = "ads_ecommerce"
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
@@ -438,8 +452,7 @@ def export_alerts(alert_type: str = None, keyword: str = None):
 def export_stats(window_start: str = None, window_end: str = None):
     """导出窗口统计数据为CSV"""
     from fastapi.responses import Response as FastResponse
-    ads_config = MYSQL_CONFIG.copy()
-    ads_config["database"] = "ads_ecommerce"
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
     try:
         conn = pymysql.connect(**ads_config)
         with conn.cursor() as cur:
@@ -478,6 +491,79 @@ def export_stats(window_start: str = None, window_end: str = None):
             media_type="text/csv; charset=utf-8-sig",
             headers={"Content-Disposition": "attachment; filename=transaction_stats.csv"},
         )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/dashboard/snapshot")
+def get_dashboard_snapshot():
+    """合并轮询：一次返回 Top5 排行、风险评分、告警统计、省份告警。"""
+    ads_config = {**MYSQL_CONFIG, "database": "ads_ecommerce"}
+    ecom_config = {**MYSQL_CONFIG, "database": "ecommerce"}
+    result = {}
+    try:
+        conn = pymysql.connect(**ads_config)
+        try:
+            with conn.cursor() as cur:
+                # Top 5 风险用户
+                try:
+                    cur.execute(
+                        """SELECT ra.user_id, u.user_name, COUNT(*) as alert_count
+                           FROM risk_alerts ra JOIN ecommerce.users u ON ra.user_id = u.user_id
+                           GROUP BY ra.user_id, u.user_name
+                           ORDER BY alert_count DESC LIMIT 5""")
+                    rows = cur.fetchall()
+                    result["top_risky_users"] = [
+                        {"user_id": r[0], "user_name": r[1], "alert_count": r[2]}
+                        for r in rows
+                    ]
+                except pymysql.Error:
+                    result["top_risky_users"] = []
+
+                # 告警类型分布
+                cur.execute(
+                    "SELECT alert_type, COUNT(*) as cnt FROM risk_alerts GROUP BY alert_type ORDER BY cnt DESC")
+                result["alert_stats"] = [
+                    {"alert_type": r[0], "count": r[1]} for r in cur.fetchall()
+                ]
+
+                # 省份告警统计
+                cur.execute(
+                    """SELECT u.province, COUNT(*) as alert_count
+                       FROM risk_alerts ra JOIN ecommerce.users u ON ra.user_id = u.user_id
+                       WHERE u.province IS NOT NULL
+                       GROUP BY u.province""")
+                result["region_alerts"] = [
+                    {"province": r[0], "alert_count": r[1]} for r in cur.fetchall()
+                ]
+        finally:
+            conn.close()
+
+        # 风险评分（从 Kafka 缓存）
+        with risk_score_lock:
+            items = list(risk_score_cache.items())
+        items.sort(key=lambda x: x[1], reverse=True)
+        top_scores = items[:10]
+        if top_scores:
+            conn_ecom = pymysql.connect(**ecom_config)
+            try:
+                with conn_ecom.cursor() as cur:
+                    placeholders = ",".join(["%s"] * len(top_scores))
+                    cur.execute(
+                        f"SELECT user_id, user_name FROM users WHERE user_id IN ({placeholders})",
+                        [t[0] for t in top_scores],
+                    )
+                    name_map = {r[0]: r[1] for r in cur.fetchall()}
+            finally:
+                conn_ecom.close()
+        else:
+            name_map = {}
+        result["risk_scores"] = [
+            {"user_id": uid, "user_name": name_map.get(uid, uid[-8:] if len(uid) > 8 else uid),
+             "risk_score": round(score, 4)}
+            for uid, score in top_scores
+        ]
+        return result
     except Exception as e:
         return {"error": str(e)}
 

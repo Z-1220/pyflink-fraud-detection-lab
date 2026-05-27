@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 .idea
+
+# 本地敏感配置覆盖文件
+mysql_config.local.json

@@ -1,4 +1,19 @@
-const ws = new WebSocket(`ws://${location.host}/ws`);
+let ws;
+let wsReconnectDelay = 1000;
+const WS_MAX_DELAY = 30000;
+
+function connectWebSocket() {
+    ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onopen = () => {
+        console.log('WebSocket 已连接');
+        wsReconnectDelay = 1000;
+    };
+    ws.onerror = (err) => console.error('WebSocket 错误', err);
+    ws.onclose = () => {
+        console.warn('WebSocket 已断开，%d秒后重连', wsReconnectDelay / 1000);
+        setTimeout(connectWebSocket, wsReconnectDelay);
+        wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_MAX_DELAY);
+    };
 
 let totalAmount = 0, totalCount = 0, alarmCount = 0;
 let filterActive = false;
@@ -56,38 +71,54 @@ Object.keys(gaugeCharts).forEach(key => {
     });
 });
 
-/* ========== WebSocket ========== */
-ws.onopen = () => console.log('WebSocket 已连接');
-ws.onerror = (err) => console.error('WebSocket 错误', err);
-ws.onclose = () => console.warn('WebSocket 已断开');
-
-ws.onmessage = (event) => {
-    try {
-        const msg = JSON.parse(event.data);
-        switch (msg.topic) {
-            case 'total_amount_and_count_events':
-                updateTotals(msg.data);
-                break;
-            case 'window_count_and_amount_events':
-                updateTrend(msg.data);
-                break;
-            case 'category_aggregated_events':
-                updateCategory(msg.data);
-                break;
-            case 'region_aggregated_events':
-                updateRegion(msg.data);
-                break;
-            case 'user_risk_scores':
-                fetchRiskScores();
-                break;
-            case 'alarm_events':
-                addAlarm(msg.data);
-                break;
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            switch (msg.topic) {
+                case 'snapshot':
+                    applySnapshot(msg.data);
+                    break;
+                case 'total_amount_and_count_events':
+                    updateTotals(msg.data);
+                    break;
+                case 'window_count_and_amount_events':
+                    updateTrend(msg.data);
+                    break;
+                case 'category_aggregated_events':
+                    updateCategory(msg.data);
+                    break;
+                case 'region_aggregated_events':
+                    updateRegion(msg.data);
+                    break;
+                case 'user_risk_scores':
+                    fetchRiskScores();
+                    break;
+                case 'alarm_events':
+                    addAlarm(msg.data);
+                    break;
+            }
+        } catch (e) {
+            console.error('消息处理错误', e);
         }
-    } catch (e) {
-        console.error('消息处理错误', e);
+    };
+}
+
+connectWebSocket();
+
+/* ========== 状态快照（刷新恢复） ========== */
+function applySnapshot(data) {
+    if (data.total_amount !== undefined) totalAmount = data.total_amount;
+    if (data.total_count !== undefined) totalCount = data.total_count;
+    if (data.alarm_count !== undefined) alarmCount = data.alarm_count;
+    document.getElementById('totalAmount').innerText = totalAmount.toFixed(2);
+    document.getElementById('totalCount').innerText = totalCount;
+    document.getElementById('alarmCount').innerText = alarmCount;
+    if (data.region_map) {
+        regionMap.clear();
+        Object.entries(data.region_map).forEach(([k, v]) => regionMap.set(k, v));
     }
-};
+    updateTotalGauge();
+}
 
 /* ========== 指标卡 ========== */
 function updateTotalGauge() {
@@ -210,17 +241,31 @@ function renderAlarmTable(alarms) {
     }).join('');
 }
 
-/* ========== 风险评分榜 ========== */
-async function fetchRiskScores() {
+/* ========== 仪表盘快照（合并轮询） ========== */
+async function fetchSnapshot() {
     try {
-        const resp = await fetch('/api/user-risk-scores?limit=10');
+        const resp = await fetch('/api/dashboard/snapshot');
         const data = await resp.json();
-        if (Array.isArray(data) && data.length > 0) {
-            renderRiskScoreChart(data);
+        if (!data || data.error) return;
+        if (data.top_risky_users) renderTopRiskyUsers(data.top_risky_users);
+        if (data.risk_scores && data.risk_scores.length > 0) renderRiskScoreChart(data.risk_scores);
+        if (data.alert_stats) renderGauges(data.alert_stats);
+        if (data.region_alerts) {
+            regionAlertMap.clear();
+            data.region_alerts.forEach(r => {
+                if (r.province && r.alert_count > 0) regionAlertMap.set(r.province, r.alert_count);
+            });
+            renderChinaMap();
         }
     } catch (e) {
-        console.error('获取风险评分失败', e);
+        console.error('获取仪表盘快照失败', e);
     }
+}
+
+/* ========== 风险评分榜 ========== */
+function fetchRiskScores() {
+    // 由 WebSocket user_risk_scores 触发，调用 snapshot 刷新
+    fetchSnapshot();
 }
 
 function renderRiskScoreChart(data) {
@@ -268,16 +313,8 @@ function renderRiskScoreChart(data) {
 }
 
 /* ========== 告警仪表盘 ========== */
-async function fetchAlertStats() {
-    try {
-        const resp = await fetch('/api/alerts/stats');
-        const data = await resp.json();
-        if (data && !data.error && data.by_type) {
-            renderGauges(data.by_type);
-        }
-    } catch (e) {
-        console.error('获取告警统计失败', e);
-    }
+function fetchAlertStats() {
+    fetchSnapshot();
 }
 
 function renderGauges(byType) {
@@ -309,10 +346,9 @@ let chinaGeoLoaded = false;
 
 async function loadChinaGeo() {
     try {
-        const [geoResp, regionResp, alertResp] = await Promise.all([
+        const [geoResp, regionResp] = await Promise.all([
             fetch('/static/china.json?v=1'),
-            fetch('/api/region-stats'),
-            fetch('/api/region-alert-stats')
+            fetch('/api/region-stats')
         ]);
         const geo = await geoResp.json();
         echarts.registerMap('china', geo);
@@ -323,15 +359,6 @@ async function loadChinaGeo() {
             regions.forEach(r => {
                 if (r.province) {
                     regionMap.set(r.province, { amount: r.total_amount, count: r.transaction_count });
-                }
-            });
-        }
-        // 加载初始省份告警数据
-        const alerts = await alertResp.json();
-        if (Array.isArray(alerts)) {
-            alerts.forEach(r => {
-                if (r.province && r.alert_count > 0) {
-                    regionAlertMap.set(r.province, r.alert_count);
                 }
             });
         }
@@ -398,24 +425,6 @@ function switchMap(mode) {
     renderChinaMap();
 }
 
-async function fetchRegionAlertStats() {
-    try {
-        const resp = await fetch('/api/region-alert-stats');
-        const data = await resp.json();
-        if (Array.isArray(data)) {
-            regionAlertMap.clear();
-            data.forEach(r => {
-                if (r.province && r.alert_count > 0) {
-                    regionAlertMap.set(r.province, r.alert_count);
-                }
-            });
-            renderChinaMap();
-        }
-    } catch (e) {
-        console.error('获取省份告警统计失败', e);
-    }
-}
-
 /* ========== 导出 ========== */
 function exportAlerts() {
     const type = document.getElementById('typeFilter').value;
@@ -476,31 +485,24 @@ function renderTrendChart() {
 }
 
 /* ========== 风险用户排行 ========== */
-async function fetchTopRiskyUsers() {
+function fetchTopRiskyUsers() {
+    fetchSnapshot();
+}
+
+function renderTopRiskyUsers(data) {
     const container = document.getElementById('topUsersList');
-    try {
-        const resp = await fetch('/api/top-risky-users?limit=5');
-        const data = await resp.json();
-        if (data && data.error) {
-            container.innerHTML = `<span class="placeholder">查询失败: ${escHtml(data.error)}</span>`;
-            return;
-        }
-        if (!Array.isArray(data) || data.length === 0) {
-            container.innerHTML = '<span class="placeholder">暂无告警数据</span>';
-            return;
-        }
-        container.innerHTML = data.map((u, i) => {
-            const rankClass = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : 'rn';
-            return `<div class="user-rank-item">
-                <span class="rank ${rankClass}">#${i + 1}</span>
-                <span class="uname">${escHtml(u.user_name)}</span>
-                <span class="ucount">${u.alert_count} 次告警</span>
-            </div>`;
-        }).join('');
-    } catch (e) {
-        console.error('获取风险用户排行失败', e);
-        container.innerHTML = '<span class="placeholder">网络请求失败</span>';
+    if (!Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<span class="placeholder">暂无告警数据</span>';
+        return;
     }
+    container.innerHTML = data.map((u, i) => {
+        const rankClass = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : 'rn';
+        return `<div class="user-rank-item">
+            <span class="rank ${rankClass}">#${i + 1}</span>
+            <span class="uname">${escHtml(u.user_name)}</span>
+            <span class="ucount">${u.alert_count} 次告警</span>
+        </div>`;
+    }).join('');
 }
 
 function escHtml(s) {
@@ -514,16 +516,11 @@ document.getElementById('filterInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') applyFilter();
 });
 applyFilter();
-fetchTopRiskyUsers();
-fetchRiskScores();
-fetchAlertStats();
 loadChinaGeo();
+fetchSnapshot();
 
-// 定时轮询
-setInterval(fetchTopRiskyUsers, 15000);
-setInterval(fetchRiskScores, 15000);
-setInterval(fetchAlertStats, 15000);
-setInterval(fetchRegionAlertStats, 15000);
+// 定时轮询（单一接口，15 秒）
+setInterval(fetchSnapshot, 15000);
 
 window.onresize = () => {
     categoryChart.resize();

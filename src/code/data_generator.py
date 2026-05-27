@@ -15,20 +15,13 @@ import uuid
 import json
 from datetime import datetime, timedelta
 from kafka import KafkaProducer
+from config_loader import MYSQL_CONFIG
 
 # ==================== 配置 ====================
-MYSQL_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "123456",
-    "database": "ecommerce",
-    "charset": "utf8mb4",
-}
+ECOM_MYSQL_CONFIG = {**MYSQL_CONFIG, "database": "ecommerce"}
 
 KAFKA_BOOTSTRAP = "localhost:9092"
 TOPIC_TRANSACTION = "transaction_events"
-TOPIC_USER_INFO = "user_info"
 
 BATCH_SIZE = 15
 SLEEP_INTERVAL = 1.5
@@ -69,7 +62,6 @@ class TransactionGenerator:
         self.seq_committed = set()
         self.reconnect_attempts = 3
         self._load_metadata()
-        self._send_all_user_info()
 
     def _load_metadata(self):
         """从维表中加载用户和商品信息"""
@@ -104,26 +96,6 @@ class TransactionGenerator:
 
         print(f"✅ 元数据加载完成：{len(self.user_ids)} 个用户，{len(self.product_info)} 个商品")
 
-    def _send_all_user_info(self):
-        """将全量用户信息发送到 Kafka"""
-        for user in self.all_users:
-            uid = user[0]
-            msg = {
-                "user_id": uid,
-                "user_name": user[1],
-                "ip_address": user[2],
-                "account_type": user[3],
-                "device": user[4],
-                "province": self.user_province_map.get(uid, "未知"),
-                "city": self.user_city_map.get(uid, "未知"),
-            }
-            try:
-                self.kafka_producer.send(TOPIC_USER_INFO, value=msg)
-            except Exception as e:
-                print(f"⚠️ 发送用户信息失败: {e}")
-        self.kafka_producer.flush()
-        print(f"✅ 已发送 {len(self.all_users)} 条用户信息到 Kafka")
-
     def refresh_metadata(self):
         """定期刷新元数据（适应新增用户）"""
         with self.conn.cursor() as cur:
@@ -142,7 +114,6 @@ class TransactionGenerator:
                 pass
             cur.execute("SELECT product_id, product_name FROM products")
             self.product_name_map = {row[0]: row[1] for row in cur.fetchall()}
-        self._send_all_user_info()
         print(f"🔄 元数据已刷新，当前用户数: {len(self.user_ids)}")
 
     @staticmethod
@@ -315,7 +286,7 @@ def main():
     )
 
     # MySQL 连接
-    mysql_conn = pymysql.connect(**MYSQL_CONFIG, autocommit=False)
+    mysql_conn = pymysql.connect(**ECOM_MYSQL_CONFIG, autocommit=False)
 
     try:
         gen = TransactionGenerator(mysql_conn, kafka_producer)

@@ -11,6 +11,7 @@ import traceback
 from datetime import datetime, timezone
 
 import pymysql
+from config_loader import MYSQL_CONFIG
 from pyflink.common import Duration, Time, WatermarkStrategy, Types, RestartStrategies
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.watermark_strategy import TimestampAssigner
@@ -54,7 +55,6 @@ OUTPUT_ALARM_TOPIC = "alarm_events"
 OUTPUT_GLOBAL_ACC_TOPIC = "total_amount_and_count_events"
 OUTPUT_WINDOW_GLOBAL_TOPIC = "window_count_and_amount_events"
 OUTPUT_CATEGORY_TOPIC = "category_aggregated_events"
-OUTPUT_PRODUCT_TOPIC = "product_aggregated_events"
 OUTPUT_REGION_TOPIC = "region_aggregated_events"
 OUTPUT_RISK_SCORE_TOPIC = "user_risk_scores"
 
@@ -68,15 +68,7 @@ FAILED_SURGE_THRESHOLD = 8              # 失败交易飙升阈值：30 秒内�
 IP_SHARING_WINDOW_SECONDS = 60          # IP 共用检测窗口：60 秒内同 IP 不同用户数超过阈值则告警
 IP_SHARING_THRESHOLD = 3                # IP 共用阈值：同 IP 出现 ≥ 3 个不同用户
 
-ADS_MYSQL_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "123456",
-    "database": "ads_ecommerce",
-    "charset": "utf8mb4",
-    "autocommit": True,
-}
+ADS_MYSQL_CONFIG = {**MYSQL_CONFIG, "database": "ads_ecommerce", "autocommit": True}
 
 # 解析后元组字段索引（ParseTransaction 返回的 12 元组）
 T_IDX_USER_ID = 0
@@ -435,31 +427,6 @@ class IPSharingDetector(ProcessWindowFunction):
             self.ads_conn.close()
 
 
-class ProductWindowFunction(ProcessWindowFunction):
-    """5 秒滚动窗口按商品聚合交易额和笔数"""
-    def open(self, runtime_context):
-        pass
-
-    def process(self, product_name: str, context, elements) -> list:
-        total = 0.0
-        count = 0
-        category = ""
-        for e in elements:
-            total += e[T_IDX_AMOUNT]
-            count += 1
-            if not category:
-                category = e[T_IDX_CATEGORY]
-        result = {
-            "window_start": context.window().start,
-            "window_end": context.window().end,
-            "product_name": product_name,
-            "category": category,
-            "total_amount": round(total, 2),
-            "transaction_count": count,
-        }
-        return [json.dumps(result)]
-
-
 class RegionWindowFunction(ProcessWindowFunction):
     """5 秒滚动窗口按省份聚合交易额和笔数（用于中国地图热力图）"""
     def open(self, runtime_context):
@@ -577,17 +544,44 @@ class CategoryWindowFunction(ProcessWindowFunction):
 
 
 class TimeDecayRiskScorer(KeyedProcessFunction):
-    """时间衰减风险评分。每条告警触发：旧分衰减 + 权重累加，立即输出。"""
+    """时间衰减风险评分。每条告警触发：旧分衰减 + 动态严重性累加。
+
+    严重性 = 基础权重 x 动态乘数，乘数基于告警具体指标超出阈值的程度。
+    例如：大额交易 50000 元比 5001 元严重 10 倍（上限 5x）。
+    """
 
     def __init__(self):
         self.score_state = None
-        self._weights = {
-            "LARGE_AMOUNT": 0.33,
-            "HIGH_FREQUENCY": 0.27,
+        self._base_weights = {
+            "LARGE_AMOUNT": 0.30,
+            "HIGH_FREQUENCY": 0.25,
             "CONTINUOUS_INCREASE": 0.20,
-            "IP_SHARING": 0.20,
+            "FAILED_SURGE": 0.25,
+            "IP_SHARING": 0.25,
         }
         self._lambda = math.log(2) / 180_000.0  # T_half=3min
+
+    def _compute_severity(self, alert):
+        """根据告警具体指标计算动态严重性。乘数上限 5x 防止单次告警过度影响。"""
+        alert_type = alert.get("alert_type", "UNKNOWN")
+        base = self._base_weights.get(alert_type, 0.10)
+        multiplier = 1.0
+        if alert_type == "LARGE_AMOUNT":
+            amount = alert.get("amount", 0) or 0
+            multiplier = min(amount / 5000.0, 5.0)
+        elif alert_type == "HIGH_FREQUENCY":
+            count = alert.get("transaction_count", 0) or 0
+            multiplier = min(count / 5.0, 4.0)
+        elif alert_type == "CONTINUOUS_INCREASE":
+            seq_len = alert.get("sequence_length", 0) or 0
+            multiplier = min(seq_len / 3.0, 4.0)
+        elif alert_type == "FAILED_SURGE":
+            count = alert.get("transaction_count", 0) or 0
+            multiplier = min(count / 8.0, 5.0)
+        elif alert_type == "IP_SHARING":
+            users = alert.get("user_count", 0) or 0
+            multiplier = min(users / 3.0, 5.0)
+        return base * multiplier
 
     def open(self, runtime_context: RuntimeContext):
         self.score_state = runtime_context.get_state(
@@ -597,10 +591,8 @@ class TimeDecayRiskScorer(KeyedProcessFunction):
     def process_element(self, value, ctx):
         alert = json.loads(value)
         user_id = alert.get("user_id", "unknown")
-        alert_type = alert.get("alert_type", "UNKNOWN")
-        w = self._weights.get(alert_type, 0.10)
+        severity = self._compute_severity(alert)
 
-        # 两种来源均为 epoch 毫秒，保持一致性
         try:
             now = datetime.fromisoformat(alert["alert_time"]).timestamp() * 1000.0
         except (KeyError, ValueError):
@@ -617,7 +609,7 @@ class TimeDecayRiskScorer(KeyedProcessFunction):
         if last_ts > 0 and now > last_ts:
             last_score *= math.exp(-self._lambda * (now - last_ts))
 
-        new_score = last_score + w
+        new_score = last_score + severity
         self.score_state.update(f"{new_score},{now}")
 
         if new_score > 0.001:
@@ -720,12 +712,6 @@ def main():
         .process(CategoryWindowFunction(), output_type=Types.STRING())
     )
 
-    product_window_stream = (
-        parsed_stream.key_by(lambda x: x[T_IDX_PRODUCT_NAME])
-        .window(TumblingEventTimeWindows.of(Time.seconds(5)))
-        .process(ProductWindowFunction(), output_type=Types.STRING())
-    )
-
     region_window_stream = (
         parsed_stream.key_by(lambda x: x[T_IDX_PROVINCE])
         .window(TumblingEventTimeWindows.of(Time.seconds(5)))
@@ -749,7 +735,6 @@ def main():
     global_acc_stream.sink_to(create_kafka_sink(OUTPUT_GLOBAL_ACC_TOPIC))
     global_window_stream.sink_to(create_kafka_sink(OUTPUT_WINDOW_GLOBAL_TOPIC))
     category_window_stream.sink_to(create_kafka_sink(OUTPUT_CATEGORY_TOPIC))
-    product_window_stream.sink_to(create_kafka_sink(OUTPUT_PRODUCT_TOPIC))
     region_window_stream.sink_to(create_kafka_sink(OUTPUT_REGION_TOPIC))
     risk_score_stream.sink_to(create_kafka_sink(OUTPUT_RISK_SCORE_TOPIC))
 
