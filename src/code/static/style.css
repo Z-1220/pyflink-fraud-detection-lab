@@ -7,13 +7,22 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
     min-height: 100vh; padding: 14px 20px; gap: 10px;
 }
 
-/* ---- 大屏标题 ---- */
+/* ---- 标题栏 ---- */
+.title-bar {
+    display: flex; align-items: center; flex-shrink: 0;
+}
 .dashboard-title {
-    flex-shrink: 0; text-align: center;
+    flex: 1; text-align: center;
     font-size: 34px; font-weight: bold; letter-spacing: 8px;
     color: #D4A037;
     text-shadow: 0 0 14px rgba(212, 160, 55, 0.35);
     padding-bottom: 2px;
+}
+.live-clock {
+    font-size: 18px; font-weight: bold; color: #8AA4C0;
+    font-family: 'Consolas', 'Microsoft YaHei', monospace;
+    letter-spacing: 2px;
+    white-space: nowrap;
 }
 
 /* ---- 卡片 / 面板共用 ---- */
