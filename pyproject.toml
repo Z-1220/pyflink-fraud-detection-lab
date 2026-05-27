@@ -22,3 +22,10 @@ dependencies = [
     "setuptools>=60.0,<70.0",
     "starlette>=1.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.3",
+    "pytest-mock>=3.15.1",
+]

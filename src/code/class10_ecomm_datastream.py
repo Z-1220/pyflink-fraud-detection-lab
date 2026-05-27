@@ -562,25 +562,25 @@ class TimeDecayRiskScorer(KeyedProcessFunction):
         self._lambda = math.log(2) / 180_000.0  # T_half=3min
 
     def _compute_severity(self, alert):
-        """根据告警具体指标计算动态严重性。乘数上限防止单次告警过度影响。"""
+        """根据告警具体指标计算动态严重性。乘数范围 [1.0, 上限]，保证至少获得基础权重。"""
         alert_type = alert.get("alert_type", "UNKNOWN")
         base = self._base_weights.get(alert_type, 0.10)
         multiplier = 1.0
         if alert_type == "LARGE_AMOUNT":
             amount = alert.get("amount", 0) or 0
-            multiplier = min(amount / float(HIGH_AMOUNT_THRESHOLD), 5.0)
+            multiplier = max(min(amount / float(HIGH_AMOUNT_THRESHOLD), 5.0), 1.0)
         elif alert_type == "HIGH_FREQUENCY":
             count = alert.get("transaction_count", 0) or 0
-            multiplier = min(count / float(FREQ_THRESHOLD), 4.0)
+            multiplier = max(min(count / float(FREQ_THRESHOLD), 4.0), 1.0)
         elif alert_type == "CONTINUOUS_INCREASE":
             seq_len = alert.get("sequence_length", 0) or 0
-            multiplier = min(seq_len / float(INCREASE_MIN_SEQ), 4.0)
+            multiplier = max(min(seq_len / float(INCREASE_MIN_SEQ), 4.0), 1.0)
         elif alert_type == "FAILED_SURGE":
             count = alert.get("transaction_count", 0) or 0
-            multiplier = min(count / float(FAILED_SURGE_THRESHOLD), 5.0)
+            multiplier = max(min(count / float(FAILED_SURGE_THRESHOLD), 5.0), 1.0)
         elif alert_type == "IP_SHARING":
             users = alert.get("user_count", 0) or 0
-            multiplier = min(users / float(IP_SHARING_THRESHOLD), 5.0)
+            multiplier = max(min(users / float(IP_SHARING_THRESHOLD), 5.0), 1.0)
         return base * multiplier
 
     def open(self, runtime_context: RuntimeContext):
