@@ -53,14 +53,16 @@
             </div>
         </div>
 
-        <!-- 中国地图热力图 双图并排 -->
-        <div class="charts-row">
-            <div class="chart-panel">
-                <div id="chinaMap" class="chart-map"></div>
+        <!-- 中国地图热力图 带切换 -->
+        <div class="chart-panel">
+            <div class="map-toolbar">
+                <span class="map-title" id="mapTitle">省份交易热力图</span>
+                <div class="map-toggle">
+                    <button class="toggle-btn active" id="btnAmount" onclick="switchMap('amount')">交易金额</button>
+                    <button class="toggle-btn" id="btnAlert" onclick="switchMap('alert')">风险告警</button>
+                </div>
             </div>
-            <div class="chart-panel">
-                <div id="chinaAlertMap" class="chart-map"></div>
-            </div>
+            <div id="chinaMap" class="chart-map"></div>
         </div>
 
         <!-- 趋势图 + 风险用户排行 -->

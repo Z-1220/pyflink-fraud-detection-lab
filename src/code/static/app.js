@@ -13,7 +13,7 @@ const categoryChart = echarts.init(document.getElementById('categoryChart'));
 const trendChart = echarts.init(document.getElementById('trendChart'));
 const riskScoreChart = echarts.init(document.getElementById('riskScoreChart'));
 const chinaMapChart = echarts.init(document.getElementById('chinaMap'));
-const chinaAlertMapChart = echarts.init(document.getElementById('chinaAlertMap'));
+let mapMode = 'amount';  // 'amount' | 'alert'
 
 // 5 个仪表盘实例
 const gaugeCharts = {
@@ -294,7 +294,6 @@ async function loadChinaGeo() {
             });
         }
         renderChinaMap();
-        renderChinaAlertMap();
     } catch (e) {
         console.error('加载中国地图失败', e);
         document.getElementById('chinaMap').innerHTML = '<span style="color:#5A7A96;display:flex;align-items:center;justify-content:center;height:100%;">地图加载失败</span>';
@@ -303,24 +302,33 @@ async function loadChinaGeo() {
 
 function renderChinaMap() {
     if (!chinaGeoLoaded) return;
+    const isAmount = mapMode === 'amount';
+    const sourceMap = isAmount ? regionMap : regionAlertMap;
     const data = [];
-    regionMap.forEach((v, k) => {
-        data.push({ name: k, value: v.amount });
-    });
+    if (isAmount) {
+        sourceMap.forEach((v, k) => data.push({ name: k, value: v.amount }));
+    } else {
+        sourceMap.forEach((v, k) => data.push({ name: k, value: v }));
+    }
     const maxVal = data.length > 0 ? Math.max(...data.map(d => d.value)) : 1;
+    const colors = isAmount
+        ? ['#0F2840', '#1A4A6E', '#2B7BE4', '#D4A037', '#D45252']
+        : ['#1A1A3E', '#3A1A4E', '#7B2B4E', '#D45252', '#E88A3A'];
     chinaMapChart.setOption({
-        title: { text: '省份交易热力图', left: 'center', top: 0,
+        title: { text: isAmount ? '省份交易热力图' : '省份风险告警分布',
+                 left: 'center', top: 0,
                  textStyle: { color: '#D6E4F0', fontSize: 13 } },
         tooltip: {
             trigger: 'item',
             formatter: p => p.name
-                ? `${p.name}<br/>交易额: ¥${(p.value || 0).toFixed(2)}`
+                ? (isAmount ? `${p.name}<br/>交易额: ¥${(p.value || 0).toFixed(2)}`
+                            : `${p.name}<br/>告警数: ${p.value || 0}`)
                 : '暂无数据'
         },
         visualMap: {
             min: 0, max: maxVal, left: -8, bottom: 10,
             text: ['高', '低'], textStyle: { color: '#8AA4C0' },
-            inRange: { color: ['#0F2840', '#1A4A6E', '#2B7BE4', '#D4A037', '#D45252'] },
+            inRange: { color: colors },
             calculable: false
         },
         geo: {
@@ -344,47 +352,11 @@ function renderChinaMap() {
     });
 }
 
-function renderChinaAlertMap() {
-    if (!chinaGeoLoaded) return;
-    const data = [];
-    regionAlertMap.forEach((v, k) => {
-        data.push({ name: k, value: v });
-    });
-    const maxVal = data.length > 0 ? Math.max(...data.map(d => d.value)) : 1;
-    chinaAlertMapChart.setOption({
-        title: { text: '省份风险告警分布', left: 'center', top: 0,
-                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
-        tooltip: {
-            trigger: 'item',
-            formatter: p => p.name
-                ? `${p.name}<br/>告警数: ${p.value || 0}`
-                : '暂无数据'
-        },
-        visualMap: {
-            min: 0, max: maxVal, left: -8, bottom: 10,
-            text: ['高', '低'], textStyle: { color: '#8AA4C0' },
-            inRange: { color: ['#1A1A3E', '#3A1A4E', '#7B2B4E', '#D45252', '#E88A3A'] },
-            calculable: false
-        },
-        geo: {
-            map: 'china', roam: false, zoom: 1.15,
-            center: [105, 36],
-            label: { show: false },
-            itemStyle: {
-                areaColor: '#1A3A5C',
-                borderColor: 'rgba(255,255,255,0.15)',
-                borderWidth: 0.5
-            },
-            emphasis: {
-                label: { show: true, color: '#D6E4F0', fontSize: 12 },
-                itemStyle: { areaColor: '#2A5A8C' }
-            }
-        },
-        series: [{
-            type: 'map', map: 'china', geoIndex: 0,
-            data: data
-        }]
-    });
+function switchMap(mode) {
+    mapMode = mode;
+    document.getElementById('btnAmount').className = 'toggle-btn' + (mode === 'amount' ? ' active' : '');
+    document.getElementById('btnAlert').className = 'toggle-btn' + (mode === 'alert' ? ' active' : '');
+    renderChinaMap();
 }
 
 async function fetchRegionAlertStats() {
@@ -398,7 +370,7 @@ async function fetchRegionAlertStats() {
                     regionAlertMap.set(r.province, r.alert_count);
                 }
             });
-            renderChinaAlertMap();
+            renderChinaMap();
         }
     } catch (e) {
         console.error('获取省份告警统计失败', e);
@@ -519,6 +491,5 @@ window.onresize = () => {
     trendChart.resize();
     riskScoreChart.resize();
     chinaMapChart.resize();
-    chinaAlertMapChart.resize();
     Object.values(gaugeCharts).forEach(c => c.resize());
 };
