@@ -195,10 +195,11 @@ async function fetchRiskScores() {
 }
 
 function renderRiskScoreChart(data) {
-    const names = data.map(d => d.user_name).reverse();
-    const scores = data.map(d => d.risk_score).reverse();
+    const hasData = Array.isArray(data) && data.length > 0;
+    const names = hasData ? data.map(d => d.user_name).reverse() : [];
+    const scores = hasData ? data.map(d => d.risk_score).reverse() : [];
     riskScoreChart.setOption({
-        title: { text: '用户风险评分榜 Top 10', left: 'center', top: 4,
+        title: { text: '用户风险评分 Top 10', left: 'center', top: 4,
                  textStyle: { color: '#D6E4F0', fontSize: 18 } },
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
                    valueFormatter: v => (typeof v === 'number') ? v.toFixed(4) : v },
@@ -214,7 +215,7 @@ function renderRiskScoreChart(data) {
                  axisLine: { lineStyle: { color: 'rgba(255,255,255,0.10)' } } },
         series: [{
             type: 'bar',
-            data: scores.map((v, i) => {
+            data: hasData ? scores.map((v, i) => {
                 const ratio = i / (scores.length - 1 || 1);
                 return {
                     value: v,
@@ -226,11 +227,12 @@ function renderRiskScoreChart(data) {
                         borderRadius: [0, 3, 3, 0]
                     }
                 };
-            }),
-            label: { show: true, position: 'right', color: '#8AA4C0', fontSize: 14,
+            }) : [],
+            label: { show: hasData, position: 'right', color: '#8AA4C0', fontSize: 14,
                      formatter: p => p.value.toFixed(3) },
         }]
     });
+    riskScoreChart.resize();
 }
 
 /* ========== 告警仪表盘 ========== */
