@@ -26,12 +26,12 @@ const gaugeCharts = {
 };
 
 const GAUGE_CONFIG = {
-    LARGE_AMOUNT:        { name: '大额',   color: '#D45252' },
-    HIGH_FREQUENCY:       { name: '高频',   color: '#E88A3A' },
-    CONTINUOUS_INCREASE:  { name: '递增',   color: '#D4A037' },
-    FAILED_SURGE:         { name: '失败',   color: '#C04878' },
-    IP_SHARING:           { name: 'IP共用', color: '#3A8AE8' },
-    TOTAL:                { name: '总告警', color: '#D6E4F0' },
+    LARGE_AMOUNT:        { name: '大额交易',   color: '#D45252' },
+    HIGH_FREQUENCY:       { name: '高频交易',   color: '#E88A3A' },
+    CONTINUOUS_INCREASE:  { name: '连续递增',   color: '#D4A037' },
+    FAILED_SURGE:         { name: '失败飙升',   color: '#C04878' },
+    IP_SHARING:           { name: 'IP共用',     color: '#3A8AE8' },
+    TOTAL:                { name: '告警占比',    color: '#D6E4F0' },
 };
 
 // 初始化所有仪表盘为空
@@ -449,7 +449,7 @@ function renderCategoryChart() {
 
 function renderTrendChart() {
     trendChart.setOption({
-        title: { text: '近5分钟窗口趋势', left: 'center',
+        title: { text: '近5分钟交易趋势', left: 'center',
                  textStyle: { color: '#D6E4F0', fontSize: 18 } },
         tooltip: { trigger: 'axis' },
         legend: { data: ['金额', '笔数'], textStyle: { color: '#8AA4C0', fontSize: 13 }, top: 24 },
