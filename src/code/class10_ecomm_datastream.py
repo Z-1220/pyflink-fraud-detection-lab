@@ -5,6 +5,7 @@
 """
 
 import json
+import math
 import os
 import traceback
 from datetime import datetime, timezone
@@ -27,7 +28,7 @@ from pyflink.datastream.functions import (
     KeyedProcessFunction,
     RuntimeContext,
 )
-from pyflink.datastream.state import ListStateDescriptor
+from pyflink.datastream.state import ListStateDescriptor, ValueStateDescriptor
 from pyflink.datastream.window import TumblingEventTimeWindows
 from starlette.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -51,6 +52,7 @@ OUTPUT_WINDOW_GLOBAL_TOPIC = "window_count_and_amount_events"
 OUTPUT_CATEGORY_TOPIC = "category_aggregated_events"
 OUTPUT_PRODUCT_TOPIC = "product_aggregated_events"
 OUTPUT_REGION_TOPIC = "region_aggregated_events"
+OUTPUT_RISK_SCORE_TOPIC = "user_risk_scores"
 
 HIGH_AMOUNT_THRESHOLD = 5000.0          # 大额交易阈值：单笔交易金额 > 5000 即触发告警
 FREQ_WINDOW_MS = 300_000                # 高频交易检测窗口：5 分钟（300,000 毫秒）
@@ -613,6 +615,60 @@ class CategoryWindowFunction(ProcessWindowFunction):
             self.ads_conn.close()
 
 
+class TimeDecayRiskScorer(KeyedProcessFunction):
+    """时间衰减风险评分。每条告警触发：旧分衰减 + 权重累加，立即输出。"""
+
+    def __init__(self):
+        self.score_state = None
+        self._weights = {
+            "LARGE_AMOUNT": 0.33,
+            "HIGH_FREQUENCY": 0.27,
+            "CONTINUOUS_INCREASE": 0.20,
+            "IP_SHARING": 0.20,
+        }
+        self._lambda = math.log(2) / 180_000.0  # T_half=3min
+
+    def open(self, runtime_context: RuntimeContext):
+        self.score_state = runtime_context.get_state(
+            ValueStateDescriptor("decay_score", Types.STRING())
+        )
+
+    def process_element(self, value, ctx):
+        alert = json.loads(value)
+        user_id = alert.get("user_id", "unknown")
+        alert_type = alert.get("alert_type", "UNKNOWN")
+        w = self._weights.get(alert_type, 0.10)
+
+        try:
+            now = datetime.fromisoformat(alert["alert_time"]).timestamp() * 1000.0
+        except (KeyError, ValueError):
+            now = float(ctx.timestamp())
+
+        raw = self.score_state.value()
+        last_score = 0.0
+        last_ts = 0.0
+        if raw:
+            parts = raw.split(",")
+            last_score = float(parts[0])
+            last_ts = float(parts[1])
+
+        if last_ts > 0 and now > last_ts:
+            last_score *= math.exp(-self._lambda * (now - last_ts))
+
+        new_score = last_score + w
+        self.score_state.update(f"{new_score},{now}")
+
+        if new_score > 0.001:
+            yield json.dumps({
+                "user_id": user_id,
+                "risk_score": round(new_score, 4),
+                "update_time": alert.get("alert_time", ""),
+            })
+
+    def on_timer(self, timestamp, ctx):
+        return []
+
+
 def main():
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(1)
@@ -681,6 +737,11 @@ def main():
         failed_surge_stream, ip_sharing_stream,
     )
 
+    risk_score_stream = (
+        all_alarms.key_by(lambda v: json.loads(v).get("user_id", "unknown"))
+        .process(TimeDecayRiskScorer(), output_type=Types.STRING())
+    )
+
     global_window_stream = (
         parsed_stream.key_by(lambda x: "global")
         .window(TumblingEventTimeWindows.of(Time.seconds(5)))
@@ -724,6 +785,7 @@ def main():
     category_window_stream.sink_to(create_kafka_sink(OUTPUT_CATEGORY_TOPIC))
     product_window_stream.sink_to(create_kafka_sink(OUTPUT_PRODUCT_TOPIC))
     region_window_stream.sink_to(create_kafka_sink(OUTPUT_REGION_TOPIC))
+    risk_score_stream.sink_to(create_kafka_sink(OUTPUT_RISK_SCORE_TOPIC))
 
     env.execute("Ecommerce Risk Detection")
 
