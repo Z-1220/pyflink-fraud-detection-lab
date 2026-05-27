@@ -50,6 +50,7 @@ OUTPUT_GLOBAL_ACC_TOPIC = "total_amount_and_count_events"
 OUTPUT_WINDOW_GLOBAL_TOPIC = "window_count_and_amount_events"
 OUTPUT_CATEGORY_TOPIC = "category_aggregated_events"
 OUTPUT_PRODUCT_TOPIC = "product_aggregated_events"
+OUTPUT_REGION_TOPIC = "region_aggregated_events"
 
 HIGH_AMOUNT_THRESHOLD = 5000.0          # 大额交易阈值：单笔交易金额 > 5000 即触发告警
 FREQ_WINDOW_MS = 300_000                # 高频交易检测窗口：5 分钟（300,000 毫秒）
@@ -148,6 +149,8 @@ class ParseTransaction(MapFunction):
             txn.get("ip_address", "0.0.0.0"),        # [7]
             txn.get("product_id", "unknown"),        # [8]
             txn.get("product_name", "unknown"),      # [9]
+            txn.get("province", "未知"),              # [10]
+            txn.get("city", "未知"),                  # [11]
         )
 
 
@@ -494,6 +497,27 @@ class ProductWindowFunction(ProcessWindowFunction):
         return [json.dumps(result)]
 
 
+class RegionWindowFunction(ProcessWindowFunction):
+    """5 秒滚动窗口按省份聚合交易额和笔数（用于中国地图热力图）"""
+    def open(self, runtime_context):
+        pass
+
+    def process(self, province: str, context, elements) -> list:
+        total = 0.0
+        count = 0
+        for e in elements:
+            total += e[1]
+            count += 1
+        result = {
+            "province": province,
+            "window_start": context.window().start,
+            "window_end": context.window().end,
+            "total_amount": round(total, 2),
+            "transaction_count": count,
+        }
+        return [json.dumps(result)]
+
+
 class GlobalWindowFunction(ProcessWindowFunction):
     def __init__(self):
         self.ads_conn = None
@@ -675,6 +699,12 @@ def main():
         .process(ProductWindowFunction(), output_type=Types.STRING())
     )
 
+    region_window_stream = (
+        parsed_stream.key_by(lambda x: x[10])
+        .window(TumblingEventTimeWindows.of(Time.seconds(5)))
+        .process(RegionWindowFunction(), output_type=Types.STRING())
+    )
+
     def create_kafka_sink(topic):
         return (
             KafkaSink.builder()
@@ -693,6 +723,7 @@ def main():
     global_window_stream.sink_to(create_kafka_sink(OUTPUT_WINDOW_GLOBAL_TOPIC))
     category_window_stream.sink_to(create_kafka_sink(OUTPUT_CATEGORY_TOPIC))
     product_window_stream.sink_to(create_kafka_sink(OUTPUT_PRODUCT_TOPIC))
+    region_window_stream.sink_to(create_kafka_sink(OUTPUT_REGION_TOPIC))
 
     env.execute("Ecommerce Risk Detection")
 

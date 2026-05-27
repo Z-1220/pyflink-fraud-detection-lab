@@ -4,7 +4,7 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 
 .container {
     display: flex; flex-direction: column;
-    height: 100vh; padding: 14px 20px; gap: 10px;
+    min-height: 100vh; padding: 14px 20px; gap: 10px;
 }
 
 /* ---- 大屏标题 ---- */
@@ -18,7 +18,7 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 
 /* ---- 卡片 / 面板共用 ---- */
 .header { display: flex; justify-content: space-around; flex-shrink: 0; }
-.card, .chart-panel, .top-users-row, .alarm-section {
+.card, .chart-panel, .alarm-section {
     background: rgba(26, 58, 92, 0.82); border-radius: 10px;
 }
 
@@ -26,16 +26,30 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 .card .value { font-size: 30px; font-weight: bold; color: #D4A037; }
 .card .label { font-size: 13px; color: #8AA4C0; margin-top: 4px; }
 
-/* ---- 图表区 ---- */
-.charts {
-    display: grid; grid-template-columns: 2fr 1fr;
+/* ---- 两列图表行 ---- */
+.charts-row {
+    display: grid; grid-template-columns: 1fr 1fr;
     gap: 14px; flex-shrink: 0;
 }
+
+/* ---- 通用图表面板 ---- */
 .chart-panel { padding: 12px; }
 .chart { width: 100%; height: 220px; }
 
+/* ---- 风险评分榜 ---- */
+.chart-risk-score { width: 100%; height: 200px; }
+
+/* ---- 中国地图 ---- */
+.chart-map { width: 100%; height: 400px; }
+
+/* ---- 仪表盘行 ---- */
+.chart-gauge-row {
+    display: flex; gap: 6px; width: 100%; height: 220px;
+    align-items: center; justify-content: space-around;
+}
+.gauge-item { flex: 1; height: 220px; min-width: 0; }
+
 /* ---- 风险用户排行 ---- */
-.top-users-row { padding: 10px 16px; flex-shrink: 0; }
 .section-title { font-size: 14px; color: #8AA4C0; margin-bottom: 6px; }
 .top-users-list { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .placeholder { color: #5A7A96; font-size: 13px; }
@@ -57,8 +71,8 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 
 /* ---- 告警区域 ---- */
 .alarm-section {
-    padding: 10px 14px; flex: 1; display: flex; flex-direction: column;
-    min-height: 250px;
+    padding: 10px 14px; flex-shrink: 0;
+    min-height: 300px;
 }
 .alarm-toolbar {
     display: flex; align-items: center; gap: 16px;
@@ -74,7 +88,7 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
     color: #D6E4F0; padding: 5px 10px; border-radius: 6px;
     font-size: 13px; outline: none;
 }
-.filter-group input { width: 200px; }
+.filter-group input { width: 180px; }
 .filter-group input::placeholder { color: #4A6A86; }
 .filter-group input:focus,
 .filter-group select:focus {
@@ -90,8 +104,16 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 .filter-btn:hover { background: rgba(43, 123, 228, 0.30); color: #5BA0F0; }
 .filter-count { color: #5A7A96; font-size: 12px; white-space: nowrap; }
 
+/* ---- 导出按钮 ---- */
+.export-btn {
+    background: rgba(212, 160, 55, 0.15); border: 1px solid #D4A037;
+    color: #D4A037; padding: 5px 14px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.export-btn:hover { background: rgba(212, 160, 55, 0.30); color: #E8C05A; }
+
 /* ---- 告警表格 ---- */
-.alarm-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+.alarm-scroll { max-height: 300px; overflow-y: auto; }
 .alarm-scroll table { width: 100%; border-collapse: collapse; }
 .alarm-scroll thead { position: sticky; top: 0; z-index: 1; }
 .alarm-scroll th, .alarm-scroll td {
@@ -102,12 +124,12 @@ body { background: #0B1525; color: #D6E4F0; font-family: 'Microsoft YaHei', sans
 .alarm-scroll th { background: rgba(18, 48, 78, 0.95); color: #8AA4C0; }
 .alarm-scroll tbody tr:hover { background: rgba(212, 160, 55, 0.04); }
 
-/* ---- 5 种告警类型颜色（暖→冷严重度弧线）---- */
-.large-amount    { color: #D45252; }  /* 朱砂红 — 最高紧急 */
-.high-freq       { color: #E88A3A; }  /* 琥珀橙 — 持续活动 */
-.increase        { color: #D4A037; }  /* 琉璃黄 — 观察趋势 */
-.failed-surge    { color: #C04878; }  /* 绛紫   — 系统健康 */
-.ip-sharing      { color: #3A8AE8; }  /* 青花蓝 — 信息提示 */
+/* ---- 5 种告警类型颜色 ---- */
+.large-amount    { color: #D45252; }
+.high-freq       { color: #E88A3A; }
+.increase        { color: #D4A037; }
+.failed-surge    { color: #C04878; }
+.ip-sharing      { color: #3A8AE8; }
 
 /* ---- 滚动条 ---- */
 .alarm-scroll::-webkit-scrollbar { width: 5px; }

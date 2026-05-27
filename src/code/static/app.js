@@ -3,12 +3,54 @@ const ws = new WebSocket(`ws://${location.host}/ws`);
 let totalAmount = 0, totalCount = 0, alarmCount = 0;
 let filterActive = false;
 const categoryMap = new Map();
+const regionMap = new Map();
 const trendData = [];
 const alarmList = [];
 
+// ECharts 实例
 const categoryChart = echarts.init(document.getElementById('categoryChart'));
 const trendChart = echarts.init(document.getElementById('trendChart'));
+const riskScoreChart = echarts.init(document.getElementById('riskScoreChart'));
+const chinaMapChart = echarts.init(document.getElementById('chinaMap'));
 
+// 5 个仪表盘实例
+const gaugeCharts = {
+    LARGE_AMOUNT:        echarts.init(document.getElementById('gaugeLarge')),
+    HIGH_FREQUENCY:       echarts.init(document.getElementById('gaugeFreq')),
+    CONTINUOUS_INCREASE:  echarts.init(document.getElementById('gaugeIncrease')),
+    FAILED_SURGE:         echarts.init(document.getElementById('gaugeFailed')),
+    IP_SHARING:           echarts.init(document.getElementById('gaugeIp')),
+};
+
+const GAUGE_CONFIG = {
+    LARGE_AMOUNT:        { name: '大额', color: '#D45252' },
+    HIGH_FREQUENCY:       { name: '高频', color: '#E88A3A' },
+    CONTINUOUS_INCREASE:  { name: '递增', color: '#D4A037' },
+    FAILED_SURGE:         { name: '失败', color: '#C04878' },
+    IP_SHARING:           { name: 'IP共用', color: '#3A8AE8' },
+};
+
+// 初始化所有仪表盘为空
+Object.keys(gaugeCharts).forEach(key => {
+    const cfg = GAUGE_CONFIG[key];
+    gaugeCharts[key].setOption({
+        series: [{
+            type: 'gauge', startAngle: 210, endAngle: -30,
+            center: ['50%', '60%'], radius: '80%',
+            min: 0, max: 100,
+            axisLine: { show: true, lineStyle: { width: 8, color: [[1, 'rgba(255,255,255,0.10)']] } },
+            axisTick: { show: false },
+            splitLine: { show: false },
+            axisLabel: { show: false },
+            detail: { offsetCenter: [0, 28], valueAnimation: true,
+                      formatter: '{value}%', fontSize: 14, color: cfg.color },
+            title: { offsetCenter: [0, '85%'], fontSize: 11, color: cfg.color },
+            data: [{ value: 0, name: cfg.name }]
+        }]
+    });
+});
+
+/* ========== WebSocket ========== */
 ws.onopen = () => console.log('WebSocket 已连接');
 ws.onerror = (err) => console.error('WebSocket 错误', err);
 ws.onclose = () => console.warn('WebSocket 已断开');
@@ -26,6 +68,9 @@ ws.onmessage = (event) => {
             case 'category_aggregated_events':
                 updateCategory(msg.data);
                 break;
+            case 'region_aggregated_events':
+                updateRegion(msg.data);
+                break;
             case 'alarm_events':
                 addAlarm(msg.data);
                 break;
@@ -35,6 +80,7 @@ ws.onmessage = (event) => {
     }
 };
 
+/* ========== 指标卡 ========== */
 function updateTotals(data) {
     totalAmount = data.total_amount || 0;
     totalCount = data.transaction_count || 0;
@@ -58,6 +104,13 @@ function updateCategory(data) {
     renderCategoryChart();
 }
 
+function updateRegion(data) {
+    const prov = data.province;
+    if (!prov) return;
+    regionMap.set(prov, { amount: data.total_amount, count: data.transaction_count });
+    renderChinaMap();
+}
+
 function addAlarm(data) {
     alarmCount++;
     document.getElementById('alarmCount').innerText = alarmCount;
@@ -75,7 +128,6 @@ async function applyFilter() {
     const type = document.getElementById('typeFilter').value;
 
     if (!keyword && !type) {
-        // 无条件 → 退出筛选模式，恢复实时推送
         filterActive = false;
         document.getElementById('filterCount').innerText = alarmList.length + ' 条';
         renderAlarmTable(alarmList);
@@ -127,6 +179,205 @@ function renderAlarmTable(alarms) {
     }).join('');
 }
 
+/* ========== 风险评分榜 ========== */
+async function fetchRiskScores() {
+    try {
+        const resp = await fetch('/api/user-risk-scores?limit=10');
+        const data = await resp.json();
+        if (Array.isArray(data) && data.length > 0) {
+            renderRiskScoreChart(data);
+        }
+    } catch (e) {
+        console.error('获取风险评分失败', e);
+    }
+}
+
+function renderRiskScoreChart(data) {
+    const names = data.map(d => d.user_name).reverse();
+    const scores = data.map(d => d.risk_score).reverse();
+    riskScoreChart.setOption({
+        title: { text: '用户风险评分榜 Top 10', left: 'center', top: 4,
+                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { top: 36, right: 60, left: 100, bottom: 10 },
+        xAxis: { type: 'value', name: '风险分', nameTextStyle: { color: '#8AA4C0' },
+                 axisLabel: { color: '#8AA4C0' },
+                 splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+        yAxis: { type: 'category', data: names,
+                 axisLabel: { color: '#D6E4F0', fontSize: 11 },
+                 axisLine: { lineStyle: { color: 'rgba(255,255,255,0.10)' } } },
+        series: [{
+            type: 'bar',
+            data: scores.map((v, i) => {
+                const ratio = i / (scores.length - 1 || 1);
+                return {
+                    value: v,
+                    itemStyle: {
+                        color: ratio < 0.3 ? '#D45252'
+                             : ratio < 0.55 ? '#E88A3A'
+                             : ratio < 0.8 ? '#D4A037'
+                             : '#3A8AE8',
+                        borderRadius: [0, 3, 3, 0]
+                    }
+                };
+            }),
+            label: { show: true, position: 'right', color: '#8AA4C0', fontSize: 11 }
+        }]
+    });
+}
+
+/* ========== 告警仪表盘 ========== */
+async function fetchAlertStats() {
+    try {
+        const resp = await fetch('/api/alerts/stats');
+        const data = await resp.json();
+        if (data && !data.error && data.by_type) {
+            renderGauges(data.by_type);
+        }
+    } catch (e) {
+        console.error('获取告警统计失败', e);
+    }
+}
+
+function renderGauges(byType) {
+    const total = byType.reduce((s, t) => s + t.count, 0) || 1;
+    byType.forEach(item => {
+        const chart = gaugeCharts[item.alert_type];
+        if (!chart) return;
+        const cfg = GAUGE_CONFIG[item.alert_type];
+        const pct = Math.round(item.count / total * 100);
+        chart.setOption({
+            series: [{
+                axisLine: { lineStyle: { width: 8, color: [
+                    [pct / 100, cfg.color],
+                    [1, 'rgba(255,255,255,0.10)']
+                ] } },
+                detail: { color: cfg.color },
+                title: { color: cfg.color },
+                data: [{ value: pct, name: cfg.name + ' ' + item.count }]
+            }]
+        });
+    });
+}
+
+/* ========== 中国地图热力图 ========== */
+let chinaGeoLoaded = false;
+
+async function loadChinaGeo() {
+    try {
+        const resp = await fetch('/static/china.json?v=1');
+        const geo = await resp.json();
+        echarts.registerMap('china', geo);
+        chinaGeoLoaded = true;
+        renderChinaMap();
+    } catch (e) {
+        console.error('加载中国地图失败', e);
+        document.getElementById('chinaMap').innerHTML = '<span style="color:#5A7A96;display:flex;align-items:center;justify-content:center;height:100%;">地图加载失败</span>';
+    }
+}
+
+function renderChinaMap() {
+    if (!chinaGeoLoaded) return;
+    const data = [];
+    regionMap.forEach((v, k) => {
+        data.push({ name: k, value: v.amount });
+    });
+    const maxVal = data.length > 0 ? Math.max(...data.map(d => d.value)) : 1;
+    chinaMapChart.setOption({
+        title: { text: '省份交易热力图', left: 'center', top: 0,
+                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+        tooltip: {
+            trigger: 'item',
+            formatter: p => p.name
+                ? `${p.name}<br/>交易额: ¥${(p.value || 0).toFixed(2)}`
+                : '暂无数据'
+        },
+        visualMap: {
+            min: 0, max: maxVal, left: -8, bottom: 10,
+            text: ['高', '低'], textStyle: { color: '#8AA4C0' },
+            inRange: { color: ['#0F2840', '#1A4A6E', '#2B7BE4', '#D4A037', '#D45252'] },
+            calculable: false
+        },
+        geo: {
+            map: 'china', roam: false, zoom: 1.15,
+            center: [105, 36],
+            label: { show: false },
+            itemStyle: {
+                areaColor: '#1A3A5C',
+                borderColor: 'rgba(255,255,255,0.15)',
+                borderWidth: 0.5
+            },
+            emphasis: {
+                label: { show: true, color: '#D6E4F0', fontSize: 12 },
+                itemStyle: { areaColor: '#2A5A8C' }
+            }
+        },
+        series: [{
+            type: 'map', map: 'china', geoIndex: 0,
+            data: data
+        }]
+    });
+}
+
+/* ========== 导出 ========== */
+function exportAlerts() {
+    const type = document.getElementById('typeFilter').value;
+    const keyword = document.getElementById('filterInput').value.trim();
+    let url = '/api/export/alerts?';
+    if (type) url += `alert_type=${encodeURIComponent(type)}&`;
+    if (keyword) url += `keyword=${encodeURIComponent(keyword)}&`;
+    window.open(url, '_blank');
+}
+
+function exportStats() {
+    window.open('/api/export/stats?', '_blank');
+}
+
+/* ========== 图表渲染 ========== */
+function renderCategoryChart() {
+    const data = Array.from(categoryMap.entries()).map(([k, v]) => ({ name: k, value: v.amount }));
+    categoryChart.setOption({
+        color: ['#D45252','#D4A037','#3CAB6E','#3A8AE8','#E88A3A',
+                '#7C6BC4','#D4808A','#48B8B0','#CC8A5C','#7A9CC0'],
+        title: { text: '商品类别交易分布', left: 'center', top: 0,
+                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+        tooltip: { trigger: 'item' },
+        series: [{
+            type: 'pie', radius: ['35%', '65%'], center: ['50%', '55%'],
+            data, label: { color: '#8AA4C0', fontSize: 10, formatter: '{b}' },
+            emphasis: { label: { fontSize: 14 } }
+        }]
+    });
+}
+
+function renderTrendChart() {
+    trendChart.setOption({
+        title: { text: '近5分钟窗口趋势', left: 'center',
+                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['金额', '笔数'], textStyle: { color: '#8AA4C0' }, top: 22 },
+        grid: { top: 60, right: 50, left: 60, bottom: 30 },
+        xAxis: { type: 'category', data: trendData.map(d => d.time),
+                 axisLabel: { color: '#8AA4C0', fontSize: 10 } },
+        yAxis: [
+            { type: 'value', name: '金额(¥)', nameTextStyle: { color: '#8AA4C0' },
+              axisLabel: { color: '#8AA4C0',
+                formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v },
+              splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+            { type: 'value', name: '笔数', nameTextStyle: { color: '#8AA4C0' },
+              axisLabel: { color: '#8AA4C0' },
+              splitLine: { show: false },
+              min: 0, max: (v) => Math.max(v.max * 4, 50) }
+        ],
+        series: [
+            { name: '金额', type: 'line', data: trendData.map(d => d.amount),
+              smooth: true, yAxisIndex: 0, itemStyle: { color: '#2B7BE4' } },
+            { name: '笔数', type: 'line', data: trendData.map(d => d.count),
+              smooth: true, yAxisIndex: 1, itemStyle: { color: '#D4A037' } }
+        ]
+    });
+}
+
 /* ========== 风险用户排行 ========== */
 async function fetchTopRiskyUsers() {
     const container = document.getElementById('topUsersList');
@@ -137,11 +388,7 @@ async function fetchTopRiskyUsers() {
             container.innerHTML = `<span class="placeholder">查询失败: ${escHtml(data.error)}</span>`;
             return;
         }
-        if (!Array.isArray(data)) {
-            container.innerHTML = '<span class="placeholder">数据格式异常</span>';
-            return;
-        }
-        if (data.length === 0) {
+        if (!Array.isArray(data) || data.length === 0) {
             container.innerHTML = '<span class="placeholder">暂无告警数据</span>';
             return;
         }
@@ -155,7 +402,7 @@ async function fetchTopRiskyUsers() {
         }).join('');
     } catch (e) {
         console.error('获取风险用户排行失败', e);
-        container.innerHTML = '<span class="placeholder">网络请求失败，15秒后重试</span>';
+        container.innerHTML = '<span class="placeholder">网络请求失败</span>';
     }
 }
 
@@ -165,53 +412,25 @@ function escHtml(s) {
     return div.innerHTML;
 }
 
-/* ========== 图表 ========== */
-function renderCategoryChart() {
-    const data = Array.from(categoryMap.entries()).map(([k, v]) => ({ name: k, value: v.amount }));
-    categoryChart.setOption({
-        color: ['#D45252','#D4A037','#3CAB6E','#3A8AE8','#E88A3A',
-                '#7C6BC4','#D4808A','#48B8B0','#CC8A5C','#7A9CC0'],
-        title: { text: '商品类别交易分布', left: 'center', top: 0, textStyle: { color: '#D6E4F0', fontSize: 13 } },
-        tooltip: { trigger: 'item' },
-        series: [{
-            type: 'pie', radius: ['35%', '65%'], center: ['50%', '55%'],
-            data, label: { color: '#8AA4C0', fontSize: 10, formatter: '{b}' },
-            emphasis: { label: { fontSize: 14 } }
-        }]
-    });
-}
-
-function renderTrendChart() {
-    trendChart.setOption({
-        title: { text: '近5分钟窗口趋势', left: 'center', textStyle: { color: '#D6E4F0', fontSize: 13 } },
-        tooltip: { trigger: 'axis' },
-        legend: { data: ['金额', '笔数'], textStyle: { color: '#8AA4C0' }, top: 22 },
-        grid: { top: 60, right: 50, left: 60, bottom: 30 },
-        xAxis: { type: 'category', data: trendData.map(d => d.time), axisLabel: { color: '#8AA4C0', fontSize: 10 } },
-        yAxis: [
-            { type: 'value', name: '金额(¥)', nameTextStyle: { color: '#8AA4C0' },
-              axisLabel: { color: '#8AA4C0', formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v },
-              splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
-            { type: 'value', name: '笔数', nameTextStyle: { color: '#8AA4C0' },
-              axisLabel: { color: '#8AA4C0' },
-              splitLine: { show: false },
-              min: 0, max: (v) => Math.max(v.max * 4, 50) }
-        ],
-        series: [
-            { name: '金额', type: 'line', data: trendData.map(d => d.amount), smooth: true,
-              yAxisIndex: 0, itemStyle: { color: '#2B7BE4' } },
-            { name: '笔数', type: 'line', data: trendData.map(d => d.count), smooth: true,
-              yAxisIndex: 1, itemStyle: { color: '#D4A037' } }
-        ]
-    });
-}
-
 /* ========== 初始化 ========== */
 document.getElementById('filterInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') applyFilter();
 });
 applyFilter();
 fetchTopRiskyUsers();
-setInterval(fetchTopRiskyUsers, 15000);
+fetchRiskScores();
+fetchAlertStats();
+loadChinaGeo();
 
-window.onresize = () => { categoryChart.resize(); trendChart.resize(); };
+// 定时轮询
+setInterval(fetchTopRiskyUsers, 15000);
+setInterval(fetchRiskScores, 15000);
+setInterval(fetchAlertStats, 15000);
+
+window.onresize = () => {
+    categoryChart.resize();
+    trendChart.resize();
+    riskScoreChart.resize();
+    chinaMapChart.resize();
+    Object.values(gaugeCharts).forEach(c => c.resize());
+};

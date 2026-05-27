@@ -63,6 +63,8 @@ class TransactionGenerator:
         self.product_name_map = {}      # product_id → product_name
         self.all_users = []             # 完整用户信息，用于发送 user_info
         self.user_ip_map = {}           # user_id → ip_address
+        self.user_province_map = {}     # user_id → province
+        self.user_city_map = {}         # user_id → city
         self.seq_states = {}
         self.seq_committed = set()
         self.reconnect_attempts = 3
@@ -88,17 +90,32 @@ class TransactionGenerator:
             cur.execute("SELECT user_id, user_name, ip_address, account_type, device FROM users")
             self.all_users = cur.fetchall()
             self.user_ip_map = {row[0]: row[2] for row in self.all_users}
+
+            # 加载 province/city（兼容旧表无此字段的情况）
+            try:
+                cur.execute("SELECT user_id, province, city FROM users")
+                geo_rows = cur.fetchall()
+                self.user_province_map = {row[0]: (row[1] or "未知") for row in geo_rows}
+                self.user_city_map = {row[0]: (row[2] or "未知") for row in geo_rows}
+            except pymysql.Error:
+                self.user_province_map = {}
+                self.user_city_map = {}
+                print("⚠️ users 表无 province/city 字段，使用默认值")
+
         print(f"✅ 元数据加载完成：{len(self.user_ids)} 个用户，{len(self.product_info)} 个商品")
 
     def _send_all_user_info(self):
         """将全量用户信息发送到 Kafka"""
         for user in self.all_users:
+            uid = user[0]
             msg = {
-                "user_id": user[0],
+                "user_id": uid,
                 "user_name": user[1],
                 "ip_address": user[2],
                 "account_type": user[3],
-                "device": user[4]
+                "device": user[4],
+                "province": self.user_province_map.get(uid, "未知"),
+                "city": self.user_city_map.get(uid, "未知"),
             }
             try:
                 self.kafka_producer.send(TOPIC_USER_INFO, value=msg)
@@ -115,13 +132,22 @@ class TransactionGenerator:
             cur.execute("SELECT user_id, user_name, ip_address, account_type, device FROM users")
             self.all_users = cur.fetchall()
             self.user_ip_map = {row[0]: row[2] for row in self.all_users}
+            # 刷新 province/city
+            try:
+                cur.execute("SELECT user_id, province, city FROM users")
+                geo_rows = cur.fetchall()
+                self.user_province_map = {row[0]: (row[1] or "未知") for row in geo_rows}
+                self.user_city_map = {row[0]: (row[2] or "未知") for row in geo_rows}
+            except pymysql.Error:
+                pass
             cur.execute("SELECT product_id, product_name FROM products")
             self.product_name_map = {row[0]: row[1] for row in cur.fetchall()}
         self._send_all_user_info()
         print(f"🔄 元数据已刷新，当前用户数: {len(self.user_ids)}")
 
     @staticmethod
-    def _txn_to_kafka_msg(txn_tuple, ip_address="0.0.0.0", product_name="unknown"):
+    def _txn_to_kafka_msg(txn_tuple, ip_address="0.0.0.0", product_name="unknown",
+                          province="未知", city="未知"):
         """将交易元组转为 Kafka JSON 消息"""
         return {
             "transaction_id": txn_tuple[0],
@@ -133,6 +159,8 @@ class TransactionGenerator:
             "result": txn_tuple[6],
             "ip_address": ip_address,
             "product_name": product_name,
+            "province": province,
+            "city": city,
             "timestamp": int(datetime.strptime(txn_tuple[7], '%Y-%m-%d %H:%M:%S.%f').timestamp() * 1000)
         }
 
@@ -244,7 +272,10 @@ class TransactionGenerator:
             for txn in transactions:
                 ip = self.user_ip_map.get(txn[1], "0.0.0.0")
                 pname = self.product_name_map.get(txn[2], "unknown")
-                kafka_msg = self._txn_to_kafka_msg(txn, ip_address=ip, product_name=pname)
+                prov = self.user_province_map.get(txn[1], "未知")
+                city = self.user_city_map.get(txn[1], "未知")
+                kafka_msg = self._txn_to_kafka_msg(txn, ip_address=ip, product_name=pname,
+                                                   province=prov, city=city)
                 try:
                     self.kafka_producer.send(TOPIC_TRANSACTION, value=kafka_msg)
                 except Exception as e:

@@ -25,6 +25,7 @@ TOPICS = [
     "window_count_and_amount_events",
     "category_aggregated_events",
     "product_aggregated_events",
+    "region_aggregated_events",
 ]
 GROUP_ID = "websocket-server"
 
@@ -43,6 +44,11 @@ static_dir = os.path.join(BASE_DIR, "static")
 os.makedirs(static_dir, exist_ok=True)
 
 clients: set[WebSocket] = set()
+
+# 内存缓存：省份聚合数据（由 Kafka 消费者线程更新）
+import threading
+region_cache: dict[str, dict] = {}
+region_cache_lock = threading.Lock()
 
 
 async def broadcast(message: str):
@@ -71,6 +77,16 @@ def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
     for msg in consumer:
         payload = {"topic": msg.topic, "data": msg.value}
         asyncio.run_coroutine_threadsafe(broadcast(json.dumps(payload)), loop)
+        # 缓存省份聚合数据
+        if msg.topic == "region_aggregated_events":
+            data = msg.value
+            prov = data.get("province", "")
+            with region_cache_lock:
+                region_cache[prov] = {
+                    "province": prov,
+                    "total_amount": data.get("total_amount", 0),
+                    "transaction_count": data.get("transaction_count", 0),
+                }
 
 
 @asynccontextmanager
@@ -283,6 +299,146 @@ def get_alert_stats():
         conn.close()
         return {"by_type": by_type, "by_hour": by_hour}
     except Exception as e:  # noqa: PIE786
+        return {"error": str(e)}
+
+
+@app.get("/api/region-stats")
+def get_region_stats():
+    """返回各省份实时聚合数据（从 Kafka 缓存读取）"""
+    with region_cache_lock:
+        return list(region_cache.values())
+
+
+@app.get("/api/user-risk-scores")
+def get_user_risk_scores(limit: int = 10):
+    """返回按加权风险分排名的用户列表
+    权重：LARGE_AMOUNT=5, HIGH_FREQUENCY=3, CONTINUOUS_INCREASE=2, FAILED_SURGE=4, IP_SHARING=4
+    """
+    ads_config = MYSQL_CONFIG.copy()
+    ads_config["database"] = "ads_ecommerce"
+    try:
+        conn = pymysql.connect(**ads_config)
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT ra.user_id, u.user_name,
+                          SUM(CASE WHEN ra.alert_type = 'LARGE_AMOUNT' THEN 5
+                                   WHEN ra.alert_type = 'HIGH_FREQUENCY' THEN 3
+                                   WHEN ra.alert_type = 'CONTINUOUS_INCREASE' THEN 2
+                                   WHEN ra.alert_type = 'FAILED_SURGE' THEN 4
+                                   WHEN ra.alert_type = 'IP_SHARING' THEN 4
+                                   ELSE 1 END) as risk_score
+                   FROM risk_alerts ra
+                   JOIN ecommerce.users u ON ra.user_id = u.user_id
+                   GROUP BY ra.user_id, u.user_name
+                   ORDER BY risk_score DESC
+                   LIMIT %s""",
+                (limit,),
+            )
+            rows = cur.fetchall()
+        conn.close()
+        return [
+            {"user_id": r[0], "user_name": r[1], "risk_score": int(r[2])}
+            for r in rows
+        ]
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/export/alerts")
+def export_alerts(alert_type: str = None, keyword: str = None):
+    """导出告警数据为CSV"""
+    from fastapi.responses import Response as FastResponse
+    ads_config = MYSQL_CONFIG.copy()
+    ads_config["database"] = "ads_ecommerce"
+    try:
+        conn = pymysql.connect(**ads_config)
+        with conn.cursor() as cur:
+            conditions = []
+            params = []
+            if alert_type:
+                conditions.append("alert_type = %s")
+                params.append(alert_type)
+            if keyword:
+                conditions.append(
+                    "(user_id LIKE %s OR transaction_id LIKE %s OR details LIKE %s)")
+                kw = f"%{keyword}%"
+                params.extend([kw, kw, kw])
+            where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            sql = f"SELECT alert_type, user_id, transaction_id, amount, transaction_count, details, alert_time FROM risk_alerts {where} ORDER BY alert_time DESC LIMIT 5000"
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        conn.close()
+
+        import io
+        output = io.StringIO()
+        output.write('﻿')  # BOM for Excel
+        output.write("告警类型,用户ID,交易ID,金额,交易次数,详情,告警时间\n")
+        for r in rows:
+            output.write(",".join([
+                str(r[0] or ""),
+                str(r[1] or ""),
+                str(r[2] or ""),
+                str(r[3] or ""),
+                str(r[4] or ""),
+                f'"{str(r[5] or "").replace(chr(34), chr(34)+chr(34))}"',
+                str(r[6] or ""),
+            ]) + "\n")
+        csv_content = output.getvalue()
+        output.close()
+        return FastResponse(
+            content=csv_content.encode("utf-8-sig"),
+            media_type="text/csv; charset=utf-8-sig",
+            headers={"Content-Disposition": "attachment; filename=risk_alerts.csv"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/export/stats")
+def export_stats(window_start: str = None, window_end: str = None):
+    """导出窗口统计数据为CSV"""
+    from fastapi.responses import Response as FastResponse
+    ads_config = MYSQL_CONFIG.copy()
+    ads_config["database"] = "ads_ecommerce"
+    try:
+        conn = pymysql.connect(**ads_config)
+        with conn.cursor() as cur:
+            if window_start and window_end:
+                cur.execute(
+                    """SELECT window_start, window_end, category, total_amount, transaction_count
+                       FROM transaction_stats
+                       WHERE window_start >= %s AND window_end <= %s
+                       ORDER BY window_start DESC LIMIT 5000""",
+                    (window_start, window_end),
+                )
+            else:
+                cur.execute(
+                    """SELECT window_start, window_end, category, total_amount, transaction_count
+                       FROM transaction_stats ORDER BY window_start DESC LIMIT 5000"""
+                )
+            rows = cur.fetchall()
+        conn.close()
+
+        import io
+        output = io.StringIO()
+        output.write('﻿')
+        output.write("窗口开始,窗口结束,类别,总金额,交易笔数\n")
+        for r in rows:
+            output.write(",".join([
+                str(r[0] or ""),
+                str(r[1] or ""),
+                str(r[2] or ""),
+                str(r[3] or ""),
+                str(r[4] or ""),
+            ]) + "\n")
+        csv_content = output.getvalue()
+        output.close()
+        return FastResponse(
+            content=csv_content.encode("utf-8-sig"),
+            media_type="text/csv; charset=utf-8-sig",
+            headers={"Content-Disposition": "attachment; filename=transaction_stats.csv"},
+        )
+    except Exception as e:
         return {"error": str(e)}
 
 

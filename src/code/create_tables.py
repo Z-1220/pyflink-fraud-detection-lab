@@ -13,6 +13,77 @@ import uuid
 import random
 from faker import Faker
 
+# ==================== 中国省份城市映射 ====================
+# 31个省级行政区，每个省份下若干主要城市（用于模拟用户地理分布）
+CHINA_PROVINCES = {
+    "北京": ["北京"],
+    "上海": ["上海"],
+    "广东": ["广州", "深圳", "东莞", "佛山", "珠海"],
+    "浙江": ["杭州", "宁波", "温州", "嘉兴", "金华"],
+    "江苏": ["南京", "苏州", "无锡", "常州", "南通"],
+    "山东": ["济南", "青岛", "烟台", "潍坊", "临沂"],
+    "河南": ["郑州", "洛阳", "南阳", "许昌", "开封"],
+    "四川": ["成都", "绵阳", "德阳", "宜宾", "南充"],
+    "湖北": ["武汉", "宜昌", "襄阳", "荆州", "黄石"],
+    "湖南": ["长沙", "株洲", "湘潭", "衡阳", "岳阳"],
+    "福建": ["福州", "厦门", "泉州", "漳州", "莆田"],
+    "安徽": ["合肥", "芜湖", "蚌埠", "安庆", "马鞍山"],
+    "河北": ["石家庄", "唐山", "保定", "邯郸", "廊坊"],
+    "辽宁": ["沈阳", "大连", "鞍山", "抚顺", "锦州"],
+    "陕西": ["西安", "咸阳", "宝鸡", "渭南", "延安"],
+    "重庆": ["重庆"],
+    "天津": ["天津"],
+    "江西": ["南昌", "九江", "赣州", "景德镇", "宜春"],
+    "广西": ["南宁", "柳州", "桂林", "北海", "玉林"],
+    "云南": ["昆明", "大理", "曲靖", "玉溪", "丽江"],
+    "贵州": ["贵阳", "遵义", "毕节", "安顺", "六盘水"],
+    "山西": ["太原", "大同", "长治", "临汾", "运城"],
+    "黑龙江": ["哈尔滨", "齐齐哈尔", "牡丹江", "佳木斯", "大庆"],
+    "吉林": ["长春", "吉林", "延边", "四平", "通化"],
+    "甘肃": ["兰州", "天水", "白银", "酒泉", "庆阳"],
+    "内蒙古": ["呼和浩特", "包头", "赤峰", "鄂尔多斯", "呼伦贝尔"],
+    "新疆": ["乌鲁木齐", "克拉玛依", "吐鲁番", "库尔勒", "喀什"],
+    "海南": ["海口", "三亚", "儋州", "琼海", "三沙"],
+    "西藏": ["拉萨", "日喀则", "昌都", "林芝", "山南"],
+    "青海": ["西宁", "海东", "格尔木", "德令哈", "玉树"],
+    "宁夏": ["银川", "石嘴山", "吴忠", "中卫", "固原"],
+}
+
+# 省份人口权重（约等于实际人口比例，用于加权随机分配用户）
+PROVINCE_WEIGHTS = [
+    1.5,   # 北京
+    1.5,   # 上海
+    8.5,   # 广东
+    5.0,   # 浙江
+    6.0,   # 江苏
+    7.5,   # 山东
+    7.0,   # 河南
+    6.0,   # 四川
+    4.5,   # 湖北
+    5.0,   # 湖南
+    3.0,   # 福建
+    4.5,   # 安徽
+    5.5,   # 河北
+    3.0,   # 辽宁
+    3.0,   # 陕西
+    2.0,   # 重庆
+    1.0,   # 天津
+    3.5,   # 江西
+    3.5,   # 广西
+    3.0,   # 云南
+    2.5,   # 贵州
+    2.5,   # 山西
+    2.5,   # 黑龙江
+    2.0,   # 吉林
+    1.5,   # 甘肃
+    1.5,   # 内蒙古
+    1.5,   # 新疆
+    0.5,   # 海南
+    0.2,   # 西藏
+    0.3,   # 青海
+    0.3,   # 宁夏
+]
+
 # ==================== 数据库连接配置 ====================
 DB_CONFIG_BASE = {
     "host": "localhost",
@@ -39,11 +110,14 @@ ECOM_TABLES_SQL = [
         user_id      VARCHAR(50)  PRIMARY KEY COMMENT '用户唯一标识',
         user_name    VARCHAR(100) NOT NULL COMMENT '用户名称',
         ip_address   VARCHAR(45)  DEFAULT NULL COMMENT '客户端IP地址',
+        province     VARCHAR(30)  DEFAULT NULL COMMENT '省份',
+        city         VARCHAR(30)  DEFAULT NULL COMMENT '城市',
         account_type VARCHAR(20)  DEFAULT 'normal' COMMENT '账户类别 (normal/vip)',
         device       VARCHAR(200) DEFAULT NULL COMMENT '登录设备信息',
         created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
         updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录更新时间',
-        INDEX idx_account_type (account_type)
+        INDEX idx_account_type (account_type),
+        INDEX idx_province (province)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户基本信息表'""",
 
     # 维度表：商品
@@ -191,16 +265,21 @@ def init_base_data(conn):
                 )
 
         # 3. 创建 300 个初始用户（IP 使用有限池，确保复用触发 IP 共用检测）
+        # 同时按人口权重分配省份和城市
         IP_POOL = [f"10.0.{i // 10}.{i % 10 + 1}" for i in range(30)]
+        province_names = list(CHINA_PROVINCES.keys())
         for _ in range(300):
             uid = f"user_{uuid.uuid4().hex[:8]}"
             uname = fake.user_name()
             ip = random.choice(IP_POOL)
+            # 按人口权重随机分配省份城市
+            prov = random.choices(province_names, weights=PROVINCE_WEIGHTS, k=1)[0]
+            city = random.choice(CHINA_PROVINCES[prov])
             atype = random.choice(["normal", "vip"])
             device = random.choice(["Chrome/Windows", "Safari/Mac", "Chrome/Android", "iOS App"])
             cur.execute(
-                "INSERT IGNORE INTO users (user_id, user_name, ip_address, account_type, device) VALUES (%s,%s,%s,%s,%s)",
-                (uid, uname, ip, atype, device)
+                "INSERT IGNORE INTO users (user_id, user_name, ip_address, province, city, account_type, device) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (uid, uname, ip, prov, city, atype, device)
             )
         conn.commit()
     print("✅ 基础数据初始化完成（ecommerce 库）")
