@@ -236,6 +236,13 @@ def init_base_data(conn):
                   "sports", "toys", "health", "automotive", "music"]
 
     with conn.cursor() as cur:
+        # 0. 迁移旧表：添加 province/city 列（兼容旧版 schema）
+        for col, col_type in [("province", "VARCHAR(30)"), ("city", "VARCHAR(30)")]:
+            try:
+                cur.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type} DEFAULT NULL")
+            except pymysql.Error:
+                pass  # 列已存在
+
         # 1. 插入类别
         for cat in CATEGORIES:
             cur.execute("INSERT IGNORE INTO categories (category) VALUES (%s)", (cat,))
