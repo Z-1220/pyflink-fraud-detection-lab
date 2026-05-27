@@ -37,26 +37,19 @@
             <div id="riskScoreChart" class="chart-risk-score"></div>
         </div>
 
-        <!-- 饼图 + 仪表盘 -->
+        <!-- 饼图 + 趋势图 -->
         <div class="charts-row">
             <div class="chart-panel">
                 <div id="categoryChart" class="chart"></div>
             </div>
             <div class="chart-panel">
-                <div id="gaugeDashboard" class="chart-gauge-row">
-                    <div id="gaugeLarge" class="gauge-item"></div>
-                    <div id="gaugeFreq" class="gauge-item"></div>
-                    <div id="gaugeIncrease" class="gauge-item"></div>
-                    <div id="gaugeFailed" class="gauge-item"></div>
-                    <div id="gaugeIp" class="gauge-item"></div>
-                </div>
+                <div id="trendChart" class="chart"></div>
             </div>
         </div>
 
         <!-- 中国地图热力图 带切换 -->
         <div class="chart-panel">
             <div class="map-toolbar">
-                <span class="map-title" id="mapTitle">省份交易热力图</span>
                 <div class="map-toggle">
                     <button class="toggle-btn active" id="btnAmount" onclick="switchMap('amount')">交易金额</button>
                     <button class="toggle-btn" id="btnAlert" onclick="switchMap('alert')">风险告警</button>
@@ -65,10 +58,16 @@
             <div id="chinaMap" class="chart-map"></div>
         </div>
 
-        <!-- 趋势图 + 风险用户排行 -->
+        <!-- 仪表盘 + 风险用户排行 -->
         <div class="charts-row">
             <div class="chart-panel">
-                <div id="trendChart" class="chart"></div>
+                <div id="gaugeDashboard" class="chart-gauge-row">
+                    <div id="gaugeLarge" class="gauge-item"></div>
+                    <div id="gaugeFreq" class="gauge-item"></div>
+                    <div id="gaugeIncrease" class="gauge-item"></div>
+                    <div id="gaugeFailed" class="gauge-item"></div>
+                    <div id="gaugeIp" class="gauge-item"></div>
+                </div>
             </div>
             <div class="chart-panel">
                 <h3 class="section-title">&#127942; 风险用户排行 Top 5</h3>

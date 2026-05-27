@@ -199,9 +199,9 @@ function renderRiskScoreChart(data) {
     const scores = data.map(d => d.risk_score).reverse();
     riskScoreChart.setOption({
         title: { text: '用户风险评分榜 Top 10', left: 'center', top: 4,
-                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
+                 textStyle: { color: '#D6E4F0', fontSize: 18 } },
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        grid: { top: 36, right: 60, left: 130, bottom: 10 },
+        grid: { top: 40, right: 60, left: 150, bottom: 20 },
         xAxis: { type: 'value', name: '风险分',
                  nameTextStyle: { color: '#8AA4C0', fontSize: 13 },
                  axisLabel: { color: '#8AA4C0', fontSize: 13 },
@@ -316,9 +316,6 @@ function renderChinaMap() {
         ? ['#0F2840', '#1A4A6E', '#2B7BE4', '#D4A037', '#D45252']
         : ['#1A1A3E', '#3A1A4E', '#7B2B4E', '#D45252', '#E88A3A'];
     chinaMapChart.setOption({
-        title: { text: isAmount ? '省份交易热力图' : '省份风险告警分布',
-                 left: 'center', top: 0,
-                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
         tooltip: {
             trigger: 'item',
             formatter: p => p.name
@@ -399,7 +396,7 @@ function renderCategoryChart() {
         color: ['#D45252','#D4A037','#3CAB6E','#3A8AE8','#E88A3A',
                 '#7C6BC4','#D4808A','#48B8B0','#CC8A5C','#7A9CC0'],
         title: { text: '商品类别交易分布', left: 'center', top: 0,
-                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
+                 textStyle: { color: '#D6E4F0', fontSize: 18 } },
         tooltip: { trigger: 'item' },
         series: [{
             type: 'pie', radius: ['35%', '65%'], center: ['50%', '55%'],
@@ -412,7 +409,7 @@ function renderCategoryChart() {
 function renderTrendChart() {
     trendChart.setOption({
         title: { text: '近5分钟窗口趋势', left: 'center',
-                 textStyle: { color: '#D6E4F0', fontSize: 15 } },
+                 textStyle: { color: '#D6E4F0', fontSize: 18 } },
         tooltip: { trigger: 'axis' },
         legend: { data: ['金额', '笔数'], textStyle: { color: '#8AA4C0', fontSize: 13 }, top: 24 },
         grid: { top: 60, right: 50, left: 70, bottom: 30 },
