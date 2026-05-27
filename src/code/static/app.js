@@ -354,8 +354,8 @@ function renderChinaMap() {
     }
     const maxVal = data.length > 0 ? Math.max(...data.map(d => d.value)) : 1;
     const colors = isAmount
-        ? ['#0F2840', '#1A4A6E', '#2B7BE4', '#D4A037', '#D45252']
-        : ['#1A1A3E', '#3A1A4E', '#7B2B4E', '#D45252', '#E88A3A'];
+        ? ['#1E5A7A', '#2B7BE4', '#48A8F0', '#D4A037', '#D45252']
+        : ['#2E1A3E', '#6B2B5A', '#C84878', '#D45252', '#E88A3A'];
     chinaMapChart.setOption({
         tooltip: {
             trigger: 'item',
