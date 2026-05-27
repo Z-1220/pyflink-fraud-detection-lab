@@ -4,6 +4,7 @@ let totalAmount = 0, totalCount = 0, alarmCount = 0;
 let filterActive = false;
 const categoryMap = new Map();
 const regionMap = new Map();
+const regionAlertMap = new Map();
 const trendData = [];
 const alarmList = [];
 
@@ -12,6 +13,7 @@ const categoryChart = echarts.init(document.getElementById('categoryChart'));
 const trendChart = echarts.init(document.getElementById('trendChart'));
 const riskScoreChart = echarts.init(document.getElementById('riskScoreChart'));
 const chinaMapChart = echarts.init(document.getElementById('chinaMap'));
+const chinaAlertMapChart = echarts.init(document.getElementById('chinaAlertMap'));
 
 // 5 个仪表盘实例
 const gaugeCharts = {
@@ -265,14 +267,15 @@ let chinaGeoLoaded = false;
 
 async function loadChinaGeo() {
     try {
-        const [geoResp, regionResp] = await Promise.all([
+        const [geoResp, regionResp, alertResp] = await Promise.all([
             fetch('/static/china.json?v=1'),
-            fetch('/api/region-stats')
+            fetch('/api/region-stats'),
+            fetch('/api/region-alert-stats')
         ]);
         const geo = await geoResp.json();
         echarts.registerMap('china', geo);
         chinaGeoLoaded = true;
-        // 加载初始省份数据
+        // 加载初始省份交易数据
         const regions = await regionResp.json();
         if (Array.isArray(regions)) {
             regions.forEach(r => {
@@ -281,7 +284,17 @@ async function loadChinaGeo() {
                 }
             });
         }
+        // 加载初始省份告警数据
+        const alerts = await alertResp.json();
+        if (Array.isArray(alerts)) {
+            alerts.forEach(r => {
+                if (r.province && r.alert_count > 0) {
+                    regionAlertMap.set(r.province, r.alert_count);
+                }
+            });
+        }
         renderChinaMap();
+        renderChinaAlertMap();
     } catch (e) {
         console.error('加载中国地图失败', e);
         document.getElementById('chinaMap').innerHTML = '<span style="color:#5A7A96;display:flex;align-items:center;justify-content:center;height:100%;">地图加载失败</span>';
@@ -329,6 +342,67 @@ function renderChinaMap() {
             data: data
         }]
     });
+}
+
+function renderChinaAlertMap() {
+    if (!chinaGeoLoaded) return;
+    const data = [];
+    regionAlertMap.forEach((v, k) => {
+        data.push({ name: k, value: v });
+    });
+    const maxVal = data.length > 0 ? Math.max(...data.map(d => d.value)) : 1;
+    chinaAlertMapChart.setOption({
+        title: { text: '省份风险告警分布', left: 'center', top: 0,
+                 textStyle: { color: '#D6E4F0', fontSize: 13 } },
+        tooltip: {
+            trigger: 'item',
+            formatter: p => p.name
+                ? `${p.name}<br/>告警数: ${p.value || 0}`
+                : '暂无数据'
+        },
+        visualMap: {
+            min: 0, max: maxVal, left: -8, bottom: 10,
+            text: ['高', '低'], textStyle: { color: '#8AA4C0' },
+            inRange: { color: ['#1A1A3E', '#3A1A4E', '#7B2B4E', '#D45252', '#E88A3A'] },
+            calculable: false
+        },
+        geo: {
+            map: 'china', roam: false, zoom: 1.15,
+            center: [105, 36],
+            label: { show: false },
+            itemStyle: {
+                areaColor: '#1A3A5C',
+                borderColor: 'rgba(255,255,255,0.15)',
+                borderWidth: 0.5
+            },
+            emphasis: {
+                label: { show: true, color: '#D6E4F0', fontSize: 12 },
+                itemStyle: { areaColor: '#2A5A8C' }
+            }
+        },
+        series: [{
+            type: 'map', map: 'china', geoIndex: 0,
+            data: data
+        }]
+    });
+}
+
+async function fetchRegionAlertStats() {
+    try {
+        const resp = await fetch('/api/region-alert-stats');
+        const data = await resp.json();
+        if (Array.isArray(data)) {
+            regionAlertMap.clear();
+            data.forEach(r => {
+                if (r.province && r.alert_count > 0) {
+                    regionAlertMap.set(r.province, r.alert_count);
+                }
+            });
+            renderChinaAlertMap();
+        }
+    } catch (e) {
+        console.error('获取省份告警统计失败', e);
+    }
 }
 
 /* ========== 导出 ========== */
@@ -438,11 +512,13 @@ loadChinaGeo();
 setInterval(fetchTopRiskyUsers, 15000);
 setInterval(fetchRiskScores, 15000);
 setInterval(fetchAlertStats, 15000);
+setInterval(fetchRegionAlertStats, 15000);
 
 window.onresize = () => {
     categoryChart.resize();
     trendChart.resize();
     riskScoreChart.resize();
     chinaMapChart.resize();
+    chinaAlertMapChart.resize();
     Object.values(gaugeCharts).forEach(c => c.resize());
 };

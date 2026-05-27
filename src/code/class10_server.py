@@ -309,6 +309,28 @@ def get_region_stats():
         return list(region_cache.values())
 
 
+@app.get("/api/region-alert-stats")
+def get_region_alert_stats():
+    """返回各省份风险告警数量（JOIN risk_alerts + users）"""
+    ads_config = MYSQL_CONFIG.copy()
+    ads_config["database"] = "ads_ecommerce"
+    try:
+        conn = pymysql.connect(**ads_config)
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT u.province, COUNT(*) as alert_count
+                   FROM risk_alerts ra
+                   JOIN ecommerce.users u ON ra.user_id = u.user_id
+                   WHERE u.province IS NOT NULL
+                   GROUP BY u.province"""
+            )
+            rows = cur.fetchall()
+        conn.close()
+        return [{"province": r[0], "alert_count": r[1]} for r in rows]
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/user-risk-scores")
 def get_user_risk_scores(limit: int = 10):
     """返回按加权风险分排名的用户列表
