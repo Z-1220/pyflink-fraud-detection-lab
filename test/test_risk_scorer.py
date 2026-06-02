@@ -31,11 +31,13 @@ class TestComputeSeverity:
         alert = {"alert_type": "HIGH_FREQUENCY", "transaction_count": 10}
         assert risk_scorer._compute_severity(alert) == 0.50  # 0.25 * 2.0
 
-    # ---- FAILED_SURGE ----
-    def test_failed_surge(self, risk_scorer):
-        """16 笔失败交易 = 2 倍阈值。"""
+    # ---- FAILED_SURGE（系统级告警，不参与用户评分） ----
+    def test_failed_surge_uses_default_weight(self, risk_scorer):
+        """失败飙升是系统级指标，落入默认权重 0.10。
+        实际运行时 process_element 会直接跳过 FAILED_SURGE，
+        此测试仅验证 _compute_severity 的兜底行为。"""
         alert = {"alert_type": "FAILED_SURGE", "transaction_count": 16}
-        assert risk_scorer._compute_severity(alert) == 0.50  # 0.25 * 2.0
+        assert risk_scorer._compute_severity(alert) == 0.10
 
     # ---- IP_SHARING ----
     def test_ip_sharing_capped(self, risk_scorer):

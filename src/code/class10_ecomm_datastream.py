@@ -556,7 +556,6 @@ class TimeDecayRiskScorer(KeyedProcessFunction):
             "LARGE_AMOUNT": 0.30,
             "HIGH_FREQUENCY": 0.25,
             "CONTINUOUS_INCREASE": 0.20,
-            "FAILED_SURGE": 0.25,
             "IP_SHARING": 0.25,
         }
         self._lambda = math.log(2) / 180_000.0  # T_half=3min
@@ -575,9 +574,6 @@ class TimeDecayRiskScorer(KeyedProcessFunction):
         elif alert_type == "CONTINUOUS_INCREASE":
             seq_len = alert.get("sequence_length", 0) or 0
             multiplier = max(min(seq_len / float(INCREASE_MIN_SEQ), 4.0), 1.0)
-        elif alert_type == "FAILED_SURGE":
-            count = alert.get("transaction_count", 0) or 0
-            multiplier = max(min(count / float(FAILED_SURGE_THRESHOLD), 5.0), 1.0)
         elif alert_type == "IP_SHARING":
             users = alert.get("user_count", 0) or 0
             multiplier = max(min(users / float(IP_SHARING_THRESHOLD), 5.0), 1.0)
@@ -590,6 +586,9 @@ class TimeDecayRiskScorer(KeyedProcessFunction):
 
     def process_element(self, value, ctx):
         alert = json.loads(value)
+        # 失败飙升是系统级指标（user_id=GLOBAL），不归属到任何用户
+        if alert.get("alert_type") == "FAILED_SURGE":
+            return
         user_id = alert.get("user_id", "unknown")
         severity = self._compute_severity(alert)
 
