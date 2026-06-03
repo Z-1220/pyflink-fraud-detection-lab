@@ -90,7 +90,7 @@ Object.keys(gaugeCharts).forEach(key => {
             center: ['50%', '62%'], radius: '68%',
             min: 0, max: 100,
             axisLine: { show: true, lineStyle: { width: 5, color: [
-                [0.2, cfg.color], [1, 'rgba(255,255,255,0.10)']
+                [0, cfg.color], [1, 'rgba(255,255,255,0.10)']
             ] } },
             axisTick: { show: false },
             splitLine: { show: false },
