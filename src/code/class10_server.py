@@ -531,4 +531,6 @@ async def root():
     """返回监控大屏首页"""
     html_path = os.path.join(static_dir, "index.html")
     with open(html_path, "r", encoding="utf-8") as f:
-        return f.read()
+        content = f.read()
+    return HTMLResponse(content=content,
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
