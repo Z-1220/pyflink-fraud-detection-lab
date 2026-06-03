@@ -24,18 +24,18 @@ KAFKA_BOOTSTRAP = "localhost:9092"
 TOPIC_TRANSACTION = "transaction_events"
 
 BATCH_SIZE = 15
-SLEEP_INTERVAL = 1.5
+SLEEP_INTERVAL = 0.8
 HIGH_AMOUNT_THRESHOLD = 5000
 # 异常注入概率（每批次）
-HIGH_FREQ_CHANCE = 0.25         # 25% 概率注入高频交易
-HIGH_FREQ_MIN_TXNS = 3
-HIGH_FREQ_MAX_TXNS = 5
-INCREASE_SEQ_CHANCE = 0.15      # 15% 概率注入连续递增
+HIGH_FREQ_CHANCE = 0.40         # 40% 概率注入高频交易
+HIGH_FREQ_MIN_TXNS = 4
+HIGH_FREQ_MAX_TXNS = 7
+INCREASE_SEQ_CHANCE = 0.30      # 30% 概率注入连续递增
 INCREASE_SEQ_LENGTH_MIN = 3
 INCREASE_SEQ_LENGTH_MAX = 4
-LARGE_TXN_CHANCE = 0.25         # 25% 概率注入大额交易
-LARGE_TXN_COUNT_MIN = 1
-LARGE_TXN_COUNT_MAX = 2
+LARGE_TXN_CHANCE = 0.40         # 40% 概率注入大额交易
+LARGE_TXN_COUNT_MIN = 2
+LARGE_TXN_COUNT_MAX = 4
 
 CATEGORIES = [
     "electronics", "clothing", "food", "home", "books",
