@@ -14,6 +14,38 @@ function connectWebSocket() {
         setTimeout(connectWebSocket, wsReconnectDelay);
         wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_MAX_DELAY);
     };
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            switch (msg.topic) {
+                case 'snapshot':
+                    applySnapshot(msg.data);
+                    break;
+                case 'total_amount_and_count_events':
+                    updateTotals(msg.data);
+                    break;
+                case 'window_count_and_amount_events':
+                    updateTrend(msg.data);
+                    break;
+                case 'category_aggregated_events':
+                    updateCategory(msg.data);
+                    break;
+                case 'region_aggregated_events':
+                    updateRegion(msg.data);
+                    break;
+                case 'user_risk_scores':
+                    fetchRiskScores();
+                    break;
+                case 'alarm_events':
+                    addAlarm(msg.data);
+                    break;
+            }
+        } catch (e) {
+            console.error('消息处理错误', e);
+        }
+    };
+    }
+
 
 let totalAmount = 0, totalCount = 0, alarmCount = 0;
 let filterActive = false;
@@ -69,76 +101,6 @@ Object.keys(gaugeCharts).forEach(key => {
         }]
     });
 });
-
-    ws.onmessage = (event) => {
-        try {
-            const msg = JSON.parse(event.data);
-            switch (msg.topic) {
-                case 'snapshot':
-                    applySnapshot(msg.data);
-                    break;
-                case 'total_amount_and_count_events':
-                    updateTotals(msg.data);
-                    break;
-                case 'window_count_and_amount_events':
-                    updateTrend(msg.data);
-                    break;
-                case 'category_aggregated_events':
-                    updateCategory(msg.data);
-                    break;
-                case 'region_aggregated_events':
-                    updateRegion(msg.data);
-                    break;
-                case 'user_risk_scores':
-                    fetchRiskScores();
-                    break;
-                case 'alarm_events':
-                    addAlarm(msg.data);
-                    break;
-            }
-        } catch (e) {
-            console.error('消息处理错误', e);
-        }
-    };
-}
-
-connectWebSocket();
-
-/* ========== 状态快照（刷新恢复） ========== */
-function applySnapshot(data) {
-    if (data.total_amount !== undefined) totalAmount = data.total_amount;
-    if (data.total_count !== undefined) totalCount = data.total_count;
-    if (data.alarm_count !== undefined) alarmCount = data.alarm_count;
-    document.getElementById('totalAmount').innerText = totalAmount.toFixed(2);
-    document.getElementById('totalCount').innerText = totalCount;
-    document.getElementById('alarmCount').innerText = alarmCount;
-    if (data.region_map) {
-        regionMap.clear();
-        Object.entries(data.region_map).forEach(([k, v]) => regionMap.set(k, v));
-    }
-    updateTotalGauge();
-}
-
-/* ========== 指标卡 ========== */
-function updateTotalGauge() {
-    const ratio = totalCount > 0 ? Math.min(Math.ceil(alarmCount / totalCount * 100), 100) : 0;
-    _setTotalGaugeValue(ratio);
-}
-
-function _setTotalGaugeValue(ratio) {
-    const cfg = GAUGE_CONFIG.TOTAL;
-    gaugeCharts.TOTAL.setOption({
-        series: [{
-            axisLine: { lineStyle: { width: 6, color: [
-                [ratio / 100, cfg.color],
-                [1, 'rgba(255,255,255,0.10)']
-            ] } },
-            detail: { formatter: '{value}%', color: cfg.color },
-            title: { color: cfg.color },
-            data: [{ value: ratio, name: cfg.name }]
-        }]
-    });
-}
 
 function updateTotals(data) {
     totalAmount = data.total_amount || 0;
@@ -532,6 +494,7 @@ function escHtml(s) {
 document.getElementById('filterInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') applyFilter();
 });
+connectWebSocket();
 applyFilter();
 loadChinaGeo();
 fetchSnapshot();
