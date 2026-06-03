@@ -102,6 +102,42 @@ Object.keys(gaugeCharts).forEach(key => {
     });
 });
 
+/* ========== 状态快照（刷新恢复） ========== */
+function applySnapshot(data) {
+    if (data.total_amount !== undefined) totalAmount = data.total_amount;
+    if (data.total_count !== undefined) totalCount = data.total_count;
+    if (data.alarm_count !== undefined) alarmCount = data.alarm_count;
+    document.getElementById('totalAmount').innerText = totalAmount.toFixed(2);
+    document.getElementById('totalCount').innerText = totalCount;
+    document.getElementById('alarmCount').innerText = alarmCount;
+    if (data.region_map) {
+        regionMap.clear();
+        Object.entries(data.region_map).forEach(([k, v]) => regionMap.set(k, v));
+    }
+    updateTotalGauge();
+}
+
+/* ========== 指标卡 ========== */
+function updateTotalGauge() {
+    const ratio = totalCount > 0 ? Math.min(Math.ceil(alarmCount / totalCount * 100), 100) : 0;
+    _setTotalGaugeValue(ratio);
+}
+
+function _setTotalGaugeValue(ratio) {
+    const cfg = GAUGE_CONFIG.TOTAL;
+    gaugeCharts.TOTAL.setOption({
+        series: [{
+            axisLine: { lineStyle: { width: 6, color: [
+                [ratio / 100, cfg.color],
+                [1, 'rgba(255,255,255,0.10)']
+            ] } },
+            detail: { formatter: '{value}%', color: cfg.color },
+            title: { color: cfg.color },
+            data: [{ value: ratio, name: cfg.name }]
+        }]
+    });
+}
+
 function updateTotals(data) {
     totalAmount = data.total_amount || 0;
     totalCount = data.transaction_count || 0;
