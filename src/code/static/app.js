@@ -36,9 +36,7 @@ function connectWebSocket() {
                 case 'user_risk_scores':
                     fetchRiskScores();
                     break;
-                case 'alarm_events':
-                    addAlarm(msg.data);
-                    break;
+                // alarm_events 不再逐条推送，告警列表通过数据库轮询获取
             }
         } catch (e) {
             console.error('消息处理错误', e);
@@ -130,6 +128,7 @@ function _setTotalGaugeValue(ratio) {
     gaugeCharts.TOTAL.setOption({
         series: [{
             axisLine: { lineStyle: { width: 6, color: [
+                [0, cfg.color],
                 [ratio / 100, cfg.color],
                 [1, 'rgba(255,255,255,0.10)']
             ] } },
@@ -171,16 +170,21 @@ function updateRegion(data) {
     renderChinaMap();
 }
 
-function addAlarm(data) {
-    alarmCount++;
-    document.getElementById('alarmCount').innerText = alarmCount;
-    alarmList.unshift(data);
-    if (alarmList.length > 200) alarmList.pop();
-    if (!filterActive) {
-        document.getElementById('filterCount').innerText = alarmList.length + ' 条';
-        renderAlarmTable(alarmList);
+async function loadAlarmList() {
+    try {
+        const resp = await fetch('/api/alerts/history?limit=200');
+        const data = await resp.json();
+        if (Array.isArray(data)) {
+            alarmList.length = 0;
+            alarmList.push(...data);
+            if (!filterActive) {
+                document.getElementById('filterCount').innerText = alarmList.length + ' 条';
+                renderAlarmTable(alarmList);
+            }
+        }
+    } catch (e) {
+        console.error('加载告警列表失败', e);
     }
-    updateTotalGauge();
 }
 
 /* ========== 筛选 ========== */
@@ -255,6 +259,10 @@ async function fetchSnapshot() {
                 if (r.province && r.alert_count > 0) regionAlertMap.set(r.province, r.alert_count);
             });
             renderChinaMap();
+        }
+        if (data.total_alert_count !== undefined) {
+            alarmCount = data.total_alert_count;
+            document.getElementById('alarmCount').innerText = alarmCount;
         }
     } catch (e) {
         console.error('获取仪表盘快照失败', e);
@@ -344,6 +352,7 @@ function renderGauges(byType) {
         chart.setOption({
             series: [{
                 axisLine: { lineStyle: { width: 8, color: [
+                    [0, cfg.color],
                     [pct / 100, cfg.color],
                     [1, 'rgba(255,255,255,0.10)']
                 ] } },
@@ -533,12 +542,13 @@ document.getElementById('filterInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') applyFilter();
 });
 connectWebSocket();
-applyFilter();
+loadAlarmList();
 loadChinaGeo();
 fetchSnapshot();
 
-// 定时轮询（单一接口，15 秒）
+// 定时轮询（单一接口，15 秒），告警列表同步刷新
 setInterval(fetchSnapshot, 15000);
+setInterval(loadAlarmList, 15000);
 
 window.onresize = () => {
     categoryChart.resize();

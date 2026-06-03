@@ -69,6 +69,7 @@ async def broadcast(message: str):
 
 def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
     """后台线程：消费 Kafka 并调度广播到主事件循环，异常时自动重连"""
+    global server_total_amount, server_total_count, server_alarm_count
     import time as _time
     while True:
         consumer = None
@@ -83,6 +84,11 @@ def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
             )
             logging.info("Kafka 消费者启动，监听 %d 个主题", len(TOPICS))
             for msg in consumer:
+                # alarm_events 不逐条推送前端，仅更新服务端计数器
+                if msg.topic == "alarm_events":
+                    with server_total_lock:
+                        server_alarm_count += 1
+                    continue
                 payload = {"topic": msg.topic, "data": msg.value}
                 asyncio.run_coroutine_threadsafe(broadcast(json.dumps(payload)), loop)
                 # 累计状态追踪
@@ -90,9 +96,6 @@ def kafka_consumer_thread(loop: asyncio.AbstractEventLoop):
                     with server_total_lock:
                         server_total_amount = msg.value.get("total_amount", 0)
                         server_total_count = msg.value.get("transaction_count", 0)
-                elif msg.topic == "alarm_events":
-                    with server_total_lock:
-                        server_alarm_count += 1
                 # 缓存省份聚合数据
                 elif msg.topic == "region_aggregated_events":
                     data = msg.value
@@ -512,6 +515,8 @@ def get_dashboard_snapshot():
                 result["top_risky_users"] = _query_top_risky_users(cur, 5)
                 result["alert_stats"] = _query_alert_type_distribution(cur)
                 result["region_alerts"] = _query_region_alerts(cur)
+                cur.execute("SELECT COUNT(*) FROM risk_alerts")
+                result["total_alert_count"] = cur.fetchone()[0]
         finally:
             conn.close()
         result["risk_scores"] = _query_risk_scores(10)
